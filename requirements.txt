@@ -1,0 +1,12 @@
+# Versiones instaladas y probadas con Python 3.11 en Windows
+# pytrends ELIMINADO — Google deprecó sus endpoints no oficiales
+# trends.py ahora usa Playwright directamente para scraping de Google Trends
+
+newspaper3k==0.2.8
+playwright==1.59.0
+psycopg2-binary==2.9.12
+python-dotenv==1.0.1
+requests==2.31.0
+lxml==6.1.0
+lxml_html_clean>=0.4.0
+nltk==3.8.1
