@@ -18,7 +18,9 @@ import xml.etree.ElementTree as ET
 from lxml import etree as lxml_etree
 from datetime import datetime, timedelta
 from newspaper import Article, Config
-from config import DIAS_ANTIGUEDAD, DELAY_SCRAPER
+from config import HORAS_ANTIGUEDAD, DELAY_SCRAPER
+
+DIAS_ANTIGUEDAD = HORAS_ANTIGUEDAD / 24  # compatibilidad interna
 
 # ── Configuración de Newspaper3k ─────────────────────────────
 NEWSPAPER_CONFIG = Config()
@@ -30,7 +32,7 @@ NEWSPAPER_CONFIG.browser_user_agent = (
 NEWSPAPER_CONFIG.request_timeout = 15
 NEWSPAPER_CONFIG.language = 'es'
 
-FECHA_LIMITE = datetime.now() - timedelta(days=DIAS_ANTIGUEDAD)
+FECHA_LIMITE = datetime.now() - timedelta(hours=HORAS_ANTIGUEDAD)
 
 HEADERS = {
     "User-Agent": (
@@ -249,6 +251,7 @@ def scrape_con_newspaper(url: str, fecha_rss=None) -> dict | None:
         article = Article(url, config=NEWSPAPER_CONFIG)
         article.download()
         article.parse()
+        article.nlp()   # genera article.keywords y article.summary
 
         if not article.text or len(article.text) < 200:
             return None
@@ -264,6 +267,7 @@ def scrape_con_newspaper(url: str, fecha_rss=None) -> dict | None:
             "autor":     ", ".join(article.authors) if article.authors else "",
             "fecha_pub": fecha,
             "metodo":    "newspaper3k",
+            "keywords":  article.keywords or [],
         }
     except Exception as e:
         print(f"    [Newspaper3k] Error en {url}: {e}")

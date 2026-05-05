@@ -1,74 +1,133 @@
 # =============================================================
 # config.py — Configuración central del proyecto
-# Aquí defines los medios, parámetros y filtros.
-# No contiene lógica — solo valores que los demás archivos usan.
+# Metodología: KDD (Knowledge Discovery in Databases)
+# Fuente de datos: RSS por secciones temáticas — sin trends
 # =============================================================
 
-# Medios mexicanos a scrapear con su orientación ideológica
+# Medios mexicanos con su orientación ideológica
 FUENTES = [
     # Izquierda
-    {"nombre": "La Jornada",        "url_base": "https://www.jornada.com.mx",           "orientacion": "izquierda"},
-    {"nombre": "El Informador",     "url_base": "https://www.informador.mx",             "orientacion": "izquierda"},
+    {"nombre": "La Jornada",        "url_base": "https://www.jornada.com.mx",        "orientacion": "izquierda"},
+    {"nombre": "El Informador",     "url_base": "https://www.informador.mx",          "orientacion": "izquierda"},
     # Crítico / independiente
-    {"nombre": "Aristegui Noticias","url_base": "https://aristeguinoticias.com",         "orientacion": "critico"},
-    {"nombre": "El Financiero",     "url_base": "https://www.elfinanciero.com.mx",       "orientacion": "critico"},
+    {"nombre": "Aristegui Noticias","url_base": "https://aristeguinoticias.com",      "orientacion": "critico"},
+    {"nombre": "El Financiero",     "url_base": "https://www.elfinanciero.com.mx",    "orientacion": "critico"},
     # Centro
-    {"nombre": "Animal Político",   "url_base": "https://politica.expansion.mx",        "orientacion": "centro"},
-    {"nombre": "El Universal",      "url_base": "https://www.eluniversal.com.mx",        "orientacion": "centro"},
+    {"nombre": "Animal Político",   "url_base": "https://politica.expansion.mx",     "orientacion": "centro"},
+    {"nombre": "El Universal",      "url_base": "https://www.eluniversal.com.mx",     "orientacion": "centro"},
     # Derecha
-    {"nombre": "24 Horas",          "url_base": "https://www.24-horas.mx",              "orientacion": "derecha"},
-    {"nombre": "El Norte",          "url_base": "https://www.elnorte.com",              "orientacion": "derecha"},
+    {"nombre": "24 Horas",          "url_base": "https://www.24-horas.mx",           "orientacion": "derecha"},
+    {"nombre": "El Norte",          "url_base": "https://www.elnorte.com",           "orientacion": "derecha"},
 ]
 
 # =============================================================
-# LISTA BLANCA — Solo pasan trends que coincidan con al menos
-# una keyword de alguna de estas categorías.
-# Todo lo demás (deportes, entretenimiento, clima) se descarta.
+# RSS POR SECCIONES TEMÁTICAS
+# En lugar de buscar por keyword de un trend, se descargan
+# todas las noticias recientes de las secciones relevantes
+# de cada medio. El clustering agrupa las que hablan del
+# mismo evento automáticamente por similaridad semántica.
 # =============================================================
-CATEGORIAS_RELEVANTES = {
-    "politica": [
-        "presidente", "gobierno", "congreso", "senado", "diputados",
-        "secretaria", "secretario", "partido", "elecciones", "reforma",
-        "sheinbaum", "morena", "pan", "pri", "prd", "mc", "oposicion",
-        "gabinete", "gobernador", "alcalde", "municipio", "legislativo",
-        "mañanera", "conferencia", "decreto", "politica", "ministra",
-        "ministro", "claudia", "xochitl", "noroña", "monreal",
+RSS_FEEDS = {
+    "La Jornada": [
+        "https://www.jornada.com.mx/rss/politica.xml",
+        "https://www.jornada.com.mx/rss/economia.xml",
+        "https://www.jornada.com.mx/rss/mundo.xml",
+        "https://www.jornada.com.mx/rss/sociedad.xml",
     ],
-    "seguridad": [
-        "crimen", "violencia", "homicidio", "feminicidio", "cartel",
-        "ejercito", "guardia nacional", "fiscalia", "detenido", "capturado",
-        "narco", "desaparecidos", "masacre", "balacera", "extorsion",
-        "secuestro", "policia", "delito", "robo", "ataque",
+    "El Informador": [
+        "https://informador.mx/rss/mexico.xml",
     ],
-    "economia": [
-        "peso", "dolar", "inflacion", "pib", "banxico", "pemex",
-        "cfe", "presupuesto", "deuda", "inversion", "empresa", "empleo",
-        "desempleo", "salario", "pobreza", "crecimiento", "recesion",
-        "mercado", "bolsa", "tipo de cambio", "aranceles", "exportacion",
+    "Aristegui Noticias": [
+        "https://editorial.aristeguinoticias.com/feed/",
+        "https://editorial.aristeguinoticias.com/category/mexico/feed/",
     ],
-    "geopolitica": [
-        "estados unidos", "trump", "aranceles", "migracion", "frontera",
-        "china", "rusia", "onu", "tratado", "relaciones exteriores",
-        "embajada", "diplomatico", "guerra", "conflicto", "sancion",
-        "nearshoring", "t-mec", "deportacion", "asilo",
+    "El Financiero": [
+        "https://www.elfinanciero.com.mx/arc/outboundfeeds/rss/?outputType=xml",
     ],
-    "justicia": [
-        "juicio", "sentencia", "tribunal", "suprema corte", "juez",
-        "amparo", "derechos humanos", "presos", "corrupcion", "impunidad",
-        "fiscal", "ministerio publico", "detencion", "acusado", "demanda",
-        "fallo", "resolucion", "poder judicial",
+    "Animal Político": [
+        "https://politica.expansion.mx/rss",
+    ],
+    "El Universal": [
+        "https://www.eluniversal.com.mx/arc/outboundfeeds/rss/?outputType=xml",
+    ],
+    "24 Horas": [
+        "https://www.24-horas.mx/feed",
+    ],
+    "El Norte": [
+        "https://www.elnorte.com/rss/portada.xml",
     ],
 }
 
-# Cuántos días hacia atrás buscar artículos
-DIAS_ANTIGUEDAD = 3
+# =============================================================
+# FILTRADO TEMÁTICO — aplicado ANTES del clustering
+# Reduce el ruido y evita que deportes/entretenimiento
+# contaminen los clusters de noticias políticas.
+# =============================================================
 
-# Cuántos trends relevantes tomar como máximo (resultado final)
-MAX_TRENDS = 15
+# Palabras que indican que un artículo ES relevante para el corpus
+# Al menos una de estas debe aparecer en el titular
+PALABRAS_RELEVANTES = [
+    # Política
+    "sheinbaum", "gobierno", "presidente", "presidenta", "congreso",
+    "senado", "diputados", "secretar", "partido", "elección", "reforma",
+    "morena", "gobernador", "alcalde", "legislat", "decreto", "mañanera",
+    "gabinete", "ministro", "ministra", "tribunal", "corte", "juez",
+    "rocha", "sinaloa", "cartel", "fiscalía", "fgr",
+    # Seguridad
+    "violencia", "homicidio", "feminicidio", "crimen", "narco",
+    "desaparec", "masacre", "ejército", "guardia nacional", "detenid",
+    "capturad", "ataque", "balacera", "secuestro", "extorsión",
+    # Economía
+    "inflación", "peso", "dólar", "banxico", "pemex", "cfe",
+    "presupuesto", "deuda", "salario", "empleo", "desempleo",
+    "aranceles", "exportación", "inversión", "pib", "mercado",
+    # Geopolítica
+    "trump", "estados unidos", "migraci", "deportaci", "frontera",
+    "china", "rusia", "guerra", "sanción", "diplomát", "embajad",
+    "t-mec", "relaciones exteriores",
+    # Justicia
+    "sentencia", "amparo", "derechos humanos", "presos", "corrupción",
+    "impunidad", "acusado", "fallo", "resolución", "poder judicial",
+]
 
-# Cuántos candidatos revisar de Google Trends antes de filtrar
-# Google Trends México suele tener 20-50 trends por día
-MAX_CANDIDATOS = 50
+# Palabras que indican que un artículo NO es relevante
+# Si el titular contiene alguna de estas → descartado inmediatamente
+PALABRAS_EXCLUIR = [
+    # Deportes
+    "vs ", "en vivo", "liga mx", "fútbol", "futbol", "gol", "partido",
+    "torneo", "champions", "nfl", "nba", "mlb", "f1", "gp de", "grand prix",
+    "premier league", "semifinal", "cuartos de final", "portero", "delantero",
+    "tigres", "chivas", "américa", "pumas", "cruz azul", "rayados",
+    # Entretenimiento
+    "bts", "army", "boletos", "concierto", "película", "serie", "netflix",
+    "grammy", "oscar", "spotify", "artista", "cantante", "banda",
+    "reality", "celebrity", "famoso",
+    # Clima y lifestyle
+    "granizada", "lluvia", "temperatura", "ola de calor", "clima",
+    "horóscopo", "receta", "dieta", "ejercicio", "moda", "belleza",
+    "plantas", "mascotas",
+]
 
-# Segundos de espera entre requests del scraper
+# =============================================================
+# PARÁMETROS KDD
+# =============================================================
+
+# KDD Fase 1 — Selección
+# Artículos de las últimas N horas (48h = 2 días, más fresco que antes)
+HORAS_ANTIGUEDAD = 48
+
+# KDD Fase 3 — Transformación / Clustering por keywords
+# Mínimo de keywords compartidas entre dos artículos para
+# considerarlos del mismo evento
+MIN_KEYWORDS_COMPARTIDAS = 4
+
+# Mínimo de fuentes DISTINTAS para que un cluster sea un evento válido
+# Necesitamos cobertura multi-fuente para comparar sesgo
+MIN_FUENTES_POR_EVENTO = 3
+
+# Máximo de artículos a extraer por fuente dentro de un evento
+MAX_ARTICULOS_POR_FUENTE = 2
+
+# KDD Fase 4 — Minería
+# Segundos de espera entre requests al scraper
 DELAY_SCRAPER = 3

@@ -1,1 +1,20 @@
-/.claude
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Variables de entorno
+.env
+
+# Logs del pipeline
+logs/
+
+# IDEs
+.vscode/
+.idea/
