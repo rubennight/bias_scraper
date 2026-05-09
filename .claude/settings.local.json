@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jupyter kernelspec *)",
+      "Bash(python -m pip install -r requirements.txt)",
+      "Bash(python -m playwright install chromium)",
+      "Bash(python -c \"import nltk; nltk.download\\('punkt'\\); nltk.download\\('stopwords'\\)\")",
+      "Bash(python -c \"import pytrends; import newspaper; import playwright; import psycopg2; print\\('Todo OK'\\)\")",
+      "Bash(python -m pip install lxml_html_clean)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pip uninstall pytrends -y)",
+      "Bash(dir api *)",
+      "Bash(dir scraper *)",
+      "Bash(dir web *)"
+    ]
+  }
+}
