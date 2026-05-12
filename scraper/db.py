@@ -128,6 +128,17 @@ def insertar_evento(titular: str, num_fuentes: int,
     return evento_id
 
 
+def eliminar_evento(evento_id: int):
+    """Elimina un evento que quedó sin artículos (todos eran duplicados)."""
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM eventos WHERE id = %s;", (evento_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    log.info(f"[DB] Evento #{evento_id} eliminado (sin articulos nuevos).")
+
+
 def insertar_articulo(evento_id: int, fuente_id: int, datos: dict) -> int | None:
     """
     Inserta un artículo scrapeado.

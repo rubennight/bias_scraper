@@ -1,16 +1,26 @@
-// api.js — Cliente centralizado para el backend
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "http://localhost:3001/api",
-  timeout: 10000,
+  baseURL: "http://localhost:3001",
 });
 
-export const getStats       = ()         => api.get("/stats");
-export const getEventos     = (params)   => api.get("/eventos", { params });
-export const buscarEventos  = (q)        => api.get("/eventos/buscar", { params: { q } });
-export const getEvento      = (id)       => api.get(`/eventos/${id}`);
-export const getArticulo    = (id)       => api.get(`/articulos/${id}`);
-export const anotarArticulo = (id, val)  => api.put(`/articulos/${id}/anotar`, { anotado: val });
+export const getStats = () =>
+  api.get("/api/stats");
 
-export default api;
+export const getEventos = (params = {}) =>
+  api.get("/api/eventos", { params });
+
+export const buscarEventos = (q) =>
+  api.get("/api/eventos/buscar", { params: { q } });
+
+export const getEvento = (id) =>
+  api.get(`/api/eventos/${id}`);
+
+export const anotarArticulo = (id, anotado) =>
+  api.put(`/api/articulos/${id}/anotar`, { anotado });
+
+export const runScraper = () =>
+  fetch("http://localhost:3001/api/scraper/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });

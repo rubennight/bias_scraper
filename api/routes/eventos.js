@@ -8,7 +8,7 @@ const pool   = require("../db");
 // Query params: keyword, desde, hasta, page, limit
 router.get("/", async (req, res) => {
   try {
-    const { keyword, desde, hasta, page = 1, limit = 20 } = req.query;
+    const { keyword, desde, hasta, semana, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
     const params = [];
     const where  = [];
@@ -35,6 +35,12 @@ router.get("/", async (req, res) => {
       where.push(`e.ventana_fin <= $${params.length}`);
     }
 
+    // Filtro por semana ISO — ej: semana=2026-W20
+    if (semana) {
+      params.push(semana);
+      where.push(`TO_CHAR(e.ventana_inicio, 'IYYY-"W"IW') = $${params.length}`);
+    }
+
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
     // Total para paginación
@@ -44,7 +50,7 @@ router.get("/", async (req, res) => {
     );
     const total = parseInt(countResult.rows[0].count);
 
-    // Eventos con sus top keywords
+    // Eventos con sus top keywords y semana ISO
     params.push(limit, offset);
     const result = await pool.query(`
       SELECT
@@ -53,6 +59,7 @@ router.get("/", async (req, res) => {
         e.num_fuentes,
         e.ventana_inicio,
         e.ventana_fin,
+        TO_CHAR(e.ventana_inicio, 'IYYY-"W"IW') AS semana_iso,
         e.detectado_en,
         COALESCE(
           ARRAY(
@@ -65,7 +72,7 @@ router.get("/", async (req, res) => {
             LIMIT 5
           ), '{}'
         ) AS top_keywords,
-        COUNT(DISTINCT a.id)       AS total_articulos,
+        COUNT(DISTINCT a.id)        AS total_articulos,
         COUNT(DISTINCT a.fuente_id) AS fuentes_distintas
       FROM eventos e
       LEFT JOIN articulos a ON a.evento_id = e.id
@@ -131,6 +138,7 @@ router.get("/:id", async (req, res) => {
         e.num_fuentes,
         e.ventana_inicio,
         e.ventana_fin,
+        TO_CHAR(e.ventana_inicio, 'IYYY-"W"IW') AS semana_iso,
         e.detectado_en,
         COALESCE(
           ARRAY(

@@ -43,9 +43,16 @@ router.get("/", async (req, res) => {
         `),
 
         pool.query(`
-          SELECT ventana_inicio, ventana_fin,
-                 COUNT(*) AS total_eventos,
-                 SUM(num_fuentes) AS fuentes_cubiertas
+          SELECT
+            ventana_inicio,
+            ventana_fin,
+            -- Calcular número de semana ISO en PostgreSQL
+            TO_CHAR(ventana_inicio, 'IYYY-"W"IW') AS semana_iso,
+            COUNT(*)          AS total_eventos,
+            SUM(num_fuentes)  AS fuentes_cubiertas,
+            (SELECT COUNT(*) FROM articulos a
+             JOIN eventos e2 ON e2.id = a.evento_id
+             WHERE e2.ventana_inicio = eventos.ventana_inicio) AS total_articulos
           FROM eventos
           GROUP BY ventana_inicio, ventana_fin
           ORDER BY ventana_inicio DESC

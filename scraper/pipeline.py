@@ -10,20 +10,22 @@
 # Uso: python pipeline.py
 # =============================================================
 
+import io
 import os
 import sys
 import logging
 from datetime import date, datetime, timedelta
-from config import FUENTES, DIAS_VENTANA
+from config import FUENTES
 from db import (
     crear_tablas,
     insertar_fuentes,
     insertar_evento,
+    eliminar_evento,
     insertar_articulo,
     obtener_fuentes,
     insertar_keywords,
 )
-from clustering import detectar_eventos
+from clustering import detectar_eventos, get_semana_iso
 
 # ── Logging ───────────────────────────────────────────────────
 # Todo lo que pase por logging.info() — incluyendo clustering.py
@@ -37,7 +39,9 @@ _formatter  = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 _file_handler   = logging.FileHandler(_log_path, encoding="utf-8")
 _file_handler.setFormatter(_formatter)
 
-_stream_handler = logging.StreamHandler(sys.stdout)
+# Forzar UTF-8 en stdout para evitar errores CP1252 en Windows
+_stdout_utf8    = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", write_through=True)
+_stream_handler = logging.StreamHandler(_stdout_utf8)
 _stream_handler.setFormatter(_formatter)
 
 # Configurar el logger raíz — captura todos los módulos
@@ -48,14 +52,21 @@ log = logging.getLogger(__name__)
 def ejecutar():
     inicio = datetime.now()
 
-    # Calcular ventana temporal actual
-    ventana_fin    = date.today()
-    ventana_inicio = ventana_fin - timedelta(days=DIAS_VENTANA)
+    # Ventana ISO de la semana actual — lunes a domingo
+    # Basada en la fecha de HOY, no en la fecha de publicación.
+    # Los artículos se asignarán a su semana ISO por fecha_pub
+    # dentro de clustering.py. Aquí solo calculamos la ventana
+    # activa para esta ejecución.
+    ventana_inicio, ventana_fin = get_semana_iso(date.today())
+
+    # Semana ISO número para el log
+    iso_year, iso_week, _ = date.today().isocalendar()
 
     log.info("=" * 60)
     log.info("BIAS SCRAPER — Pipeline KDD")
     log.info(f"Fecha y hora  : {inicio.strftime('%Y-%m-%d %H:%M:%S')}")
-    log.info(f"Ventana       : {ventana_inicio} → {ventana_fin} ({DIAS_VENTANA} días)")
+    log.info(f"Semana ISO    : {iso_year}-W{iso_week:02d}")
+    log.info(f"Ventana       : {ventana_inicio} (lun) → {ventana_fin} (dom)")
     log.info(f"Log guardado  : {_log_path}")
     log.info("=" * 60)
 
@@ -90,7 +101,7 @@ def ejecutar():
         log.info(f"[Evento] '{evento['titular_evento'][:55]}...'")
         log.info(f"         Fuentes   : {', '.join(evento['fuentes'])}")
         log.info(f"         Keywords  : {', '.join(evento.get('top_keywords', []))}")
-        log.info(f"         Ventana   : {ventana_inicio} → {ventana_fin}")
+        log.info(f"         Ventana   : {ventana_inicio} - {ventana_fin}")
 
         evento_id = insertar_evento(
             evento["titular_evento"],
@@ -98,6 +109,8 @@ def ejecutar():
             ventana_inicio,
             ventana_fin,
         )
+
+        guardados_evento = 0
 
         for art in evento["articulos"]:
             total_articulos += 1
@@ -112,13 +125,18 @@ def ejecutar():
                 articulo_id = insertar_articulo(evento_id, fuente_id, art)
                 if articulo_id:
                     insertar_keywords(articulo_id, art.get("keywords", []))
+                    guardados_evento += 1
                     total_guardados += 1
-                    log.info(f"  ✓ [{art['fuente_nombre']}] {art['titular'][:50]}...")
+                    log.info(f"  OK [{art['fuente_nombre']}] {art['titular'][:50]}...")
                 else:
-                    log.info(f"  ~ [{art['fuente_nombre']}] Ya existía (URL duplicada)")
+                    log.info(f"  ~~ [{art['fuente_nombre']}] Ya existia (URL duplicada)")
             except Exception as e:
-                log.error(f"  ✗ Error al guardar: {e}")
+                log.error(f"  ERROR al guardar: {e}")
                 total_fallidos += 1
+
+        if guardados_evento == 0:
+            eliminar_evento(evento_id)
+            log.info(f"  [Evento] Todos los articulos eran duplicados. Evento eliminado.")
 
     # ── Resumen ───────────────────────────────────────────────
     duracion = datetime.now() - inicio
