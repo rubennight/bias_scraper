@@ -1,0 +1,13 @@
+
+/* ── SEMANA ISO BADGE ─────────────────────────────────── */
+.semana-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'Inter', monospace;
+  letter-spacing: .08em;
+  padding: 2px 8px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  color: var(--rev);
+}

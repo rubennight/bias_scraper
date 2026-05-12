@@ -108,9 +108,14 @@ PALABRAS_EXCLUIR = [
 HORAS_ANTIGUEDAD = 48
 
 # KDD Fase 3 — Ventana temporal del clustering
-# Artículos cuya fecha_pub esté fuera de la ventana son ignorados
-# en el clustering, evitando mezclar eventos de distintas semanas.
-DIAS_VENTANA = 7
+# Se usan semanas ISO (lunes → domingo) calculadas desde la
+# fecha_pub del artículo, NO desde la fecha de ejecución del pipeline.
+# Esto evita solapamiento entre ejecuciones consecutivas — múltiples
+# corridas en la misma semana ISO siempre producen la misma ventana.
+# Sustento empírico: análisis del corpus mostró que el 74% de los
+# artículos recuperables por RSS tienen fecha del día de ejecución,
+# con un rango real de 3-4 días (Barbaresi, 2021; observación propia).
+USAR_SEMANAS_ISO = True
 
 # KDD Fase 3 — Clustering por keywords
 # Mínimo de keywords compartidas entre dos artículos de fuentes

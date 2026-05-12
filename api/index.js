@@ -15,6 +15,7 @@ app.use(express.json());
 app.use("/api/stats",     require("./routes/stats"));
 app.use("/api/eventos",   require("./routes/eventos"));
 app.use("/api/articulos", require("./routes/articulos"));
+app.use("/api/scraper",   require("./routes/scraper"));
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -36,4 +37,5 @@ app.listen(PORT, () => {
   console.log(`  GET  http://localhost:${PORT}/api/eventos/:id`);
   console.log(`  GET  http://localhost:${PORT}/api/articulos/:id`);
   console.log(`  PUT  http://localhost:${PORT}/api/articulos/:id/anotar`);
+  console.log(`  POST http://localhost:${PORT}/api/scraper/run`);
 });
