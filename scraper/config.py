@@ -63,7 +63,7 @@ PALABRAS_RELEVANTES = [
     "senado", "diputados", "secretar", "partido", "elección", "reforma",
     "morena", "gobernador", "alcalde", "legislat", "decreto", "mañanera",
     "gabinete", "ministro", "ministra", "tribunal", "corte", "juez",
-    "rocha", "sinaloa", "cartel", "fiscalía", "fgr",
+    "rocha", "sinaloa", "cartel", "fiscalía", "fgr", "harfuch",
     # Seguridad
     "violencia", "homicidio", "feminicidio", "crimen", "narco",
     "desaparec", "masacre", "ejército", "guardia nacional", "detenid",
@@ -75,7 +75,7 @@ PALABRAS_RELEVANTES = [
     # Geopolítica
     "trump", "estados unidos", "migraci", "deportaci", "frontera",
     "china", "rusia", "guerra", "sanción", "diplomát", "embajad",
-    "t-mec", "relaciones exteriores",
+    "t-mec", "relaciones exteriores",  "ucrania", "venezuela", "israel", "líbano","washington",
     # Justicia
     "sentencia", "amparo", "derechos humanos", "presos", "corrupción",
     "impunidad", "acusado", "fallo", "resolución", "poder judicial",

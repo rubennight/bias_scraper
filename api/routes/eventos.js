@@ -72,6 +72,16 @@ router.get("/", async (req, res) => {
             LIMIT 5
           ), '{}'
         ) AS top_keywords,
+        (
+          SELECT COALESCE(jsonb_object_agg(sub.orientacion, sub.cnt), '{}')
+          FROM (
+            SELECT f2.orientacion, COUNT(*) AS cnt
+            FROM articulos a2
+            JOIN fuentes f2 ON f2.id = a2.fuente_id
+            WHERE a2.evento_id = e.id
+            GROUP BY f2.orientacion
+          ) sub
+        ) AS orientaciones,
         COUNT(DISTINCT a.id)        AS total_articulos,
         COUNT(DISTINCT a.fuente_id) AS fuentes_distintas
       FROM eventos e

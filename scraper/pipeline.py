@@ -24,6 +24,8 @@ from db import (
     insertar_articulo,
     obtener_fuentes,
     insertar_keywords,
+    obtener_evento_id_por_urls,
+    actualizar_num_fuentes,
 )
 from clustering import detectar_eventos, get_semana_iso
 
@@ -103,12 +105,25 @@ def ejecutar():
         log.info(f"         Keywords  : {', '.join(evento.get('top_keywords', []))}")
         log.info(f"         Ventana   : {ventana_inicio} - {ventana_fin}")
 
-        evento_id = insertar_evento(
-            evento["titular_evento"],
-            evento["num_fuentes"],
-            ventana_inicio,
-            ventana_fin,
-        )
+        # Verificar si algún artículo del cluster ya existe en la BD
+        # para reutilizar el evento existente en lugar de crear un duplicado
+        urls_cluster = [art["url"] for art in evento["articulos"]]
+        evento_existente_id = obtener_evento_id_por_urls(urls_cluster)
+
+        if evento_existente_id:
+            evento_id    = evento_existente_id
+            evento_nuevo = False
+            actualizar_num_fuentes(evento_id, evento["num_fuentes"])
+            log.info(f"  [DB] Evento ya existe (#{evento_id}) — agregando artículos nuevos.")
+        else:
+            evento_id    = insertar_evento(
+                evento["titular_evento"],
+                evento["num_fuentes"],
+                ventana_inicio,
+                ventana_fin,
+            )
+            evento_nuevo = True
+            log.info(f"  [DB] Nuevo evento #{evento_id} creado.")
 
         guardados_evento = 0
 
@@ -134,7 +149,9 @@ def ejecutar():
                 log.error(f"  ERROR al guardar: {e}")
                 total_fallidos += 1
 
-        if guardados_evento == 0:
+        # Solo eliminar el evento si fue recién creado y todos los artículos
+        # eran duplicados — no eliminar eventos pre-existentes
+        if guardados_evento == 0 and evento_nuevo:
             eliminar_evento(evento_id)
             log.info(f"  [Evento] Todos los articulos eran duplicados. Evento eliminado.")
 
