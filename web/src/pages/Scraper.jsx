@@ -1,7 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { runScraper } from "../api";
 
-// ── Definición de fases del pipeline ────────────────────────────
+// ── Fases del pipeline ─────────────────────────────────────────────
 const PHASES = [
   {
     id: "init",
@@ -123,7 +123,360 @@ function parseMetric(msg) {
   return null;
 }
 
-// ── Componente ────────────────────────────────────────────────────
+// ── Limpia el prefijo de log antes de mostrar ────────────────────
+function cleanLog(raw) {
+  return raw
+    .replace(/^\[Scraper std\w+\]\s+\S+\s+\S+\s+\[\w+\]\s*/i, "")
+    .trim();
+}
+
+// ── Línea de consola — anima al montarse ─────────────────────────
+function ConsoleLine({ text }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShow(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <div style={{
+      opacity: show ? 0.78 : 0,
+      transform: show ? "translateY(0)" : "translateY(7px)",
+      transition: "opacity 0.4s ease, transform 0.4s ease",
+      fontSize: 11,
+      lineHeight: 1.65,
+      color: "#8a8272",
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      fontFamily: "'SF Mono', 'Fira Code', Consolas, monospace",
+    }}>
+      <span style={{ color: "#d62828", marginRight: 10, userSelect: "none" }}>›</span>
+      {text}
+    </div>
+  );
+}
+
+// ── Panel de consola flotante (derecha) ──────────────────────────
+function ConsolePanel({ logs, running, visible, currentPhase }) {
+  const endRef  = useRef(null);
+  const [fadedPhase, setFadedPhase] = useState(currentPhase);
+  const [fadeState, setFadeState]   = useState("in");
+  const [wide, setWide]             = useState(
+    typeof window !== "undefined" && window.innerWidth >= 1200
+  );
+
+  // Fade suave al cambiar fase
+  useEffect(() => {
+    if (currentPhase === fadedPhase) return;
+    const t1 = setTimeout(() => setFadeState("out"), 0);
+    const t2 = setTimeout(() => {
+      setFadedPhase(currentPhase);
+      setFadeState("in");
+    }, 260);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [currentPhase, fadedPhase]);
+
+  // Responsive: ocultar en pantallas pequeñas
+  useEffect(() => {
+    const onResize = () => setWide(window.innerWidth >= 1200);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Auto-scroll al fondo
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs.length]);
+
+  if (!visible || !wide) return null;
+
+  const phase = fadedPhase >= 0 && fadedPhase < PHASES.length
+    ? PHASES[fadedPhase] : null;
+
+  return (
+    <div style={{
+      position: "fixed",
+      right: 44,
+      top: "50%",
+      transform: "translateY(-50%)",
+      width: 540,
+      height: 480,
+      background: "rgba(10, 9, 7, 0.96)",
+      border: `1.5px solid ${running ? "var(--rev)" : "#2a2720"}`,
+      backdropFilter: "blur(12px)",
+      zIndex: 200,
+      transition: "border-color 0.5s ease",
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+    }}>
+
+      {/* ── Cabecera con fase actual ── */}
+      <div style={{
+        padding: "16px 18px 14px",
+        borderBottom: "1px solid #1a1814",
+        flexShrink: 0,
+      }}>
+        {/* Fila superior: label + dot */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+        }}>
+          {running && (
+            <span style={{
+              width: 5, height: 5, borderRadius: "50%",
+              background: "var(--rev)", flexShrink: 0,
+              animation: "kdd-pulse 1.2s ease-in-out infinite",
+            }} />
+          )}
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: ".18em",
+            textTransform: "uppercase", color: "#38342a",
+            fontFamily: "'SF Mono', monospace",
+          }}>
+            Pipeline
+          </span>
+        </div>
+
+        {/* Fase con fade al cambiar */}
+        <div style={{
+          opacity: fadeState === "in" ? 1 : 0,
+          transform: fadeState === "in" ? "translateY(0)" : "translateY(-6px)",
+          transition: "opacity 260ms cubic-bezier(.4,0,.2,1), transform 260ms cubic-bezier(.4,0,.2,1)",
+          minHeight: 38,
+        }}>
+          {phase ? (
+            <>
+              <div style={{
+                fontSize: 10, letterSpacing: ".14em",
+                color: running ? "var(--rev)" : "#38342a",
+                fontFamily: "'SF Mono', monospace",
+                marginBottom: 4,
+                transition: "color 0.4s ease",
+              }}>
+                {phase.num}
+              </div>
+              <div style={{
+                fontSize: 12, fontWeight: 700,
+                color: "#6e6860", letterSpacing: "-.01em", lineHeight: 1.35,
+              }}>
+                {phase.label}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 11, color: "#2e2a22", fontFamily: "'SF Mono', monospace" }}>
+              —
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Líneas de log ── */}
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        overflowX: "hidden",
+        padding: "10px 18px 12px",
+        display: "flex", flexDirection: "column", gap: 1,
+        scrollbarWidth: "thin",
+        scrollbarColor: "#2a2720 transparent",
+      }}>
+        {logs.slice(-15).map((line, i) => (
+          <ConsoleLine key={logs.length - 15 + i} text={line} />
+        ))}
+        <div ref={endRef} />
+      </div>
+
+      {/* ── Pie ── */}
+      <div style={{
+        padding: "8px 18px",
+        borderTop: "1px solid #1a1814",
+        fontSize: 10, color: "#2a2720",
+        fontFamily: "'SF Mono', monospace",
+        letterSpacing: ".1em",
+        display: "flex", justifyContent: "space-between",
+        flexShrink: 0,
+      }}>
+        <span>{logs.length} líneas</span>
+        {!running && logs.length > 0 && (
+          <span style={{ color: "#38342a" }}>✓ done</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Sección de fase full-screen ───────────────────────────────────
+function PhaseSection({ phase, i, state, metric, activity }) {
+  const ref = useRef(null);
+  const [inView, setInView] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setInView(true); },
+      { threshold: 0.08, rootMargin: "0px 0px -5% 0px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const isActive  = state === "active";
+  const isDone    = state === "complete";
+  const isPending = state === "pending";
+
+  return (
+    <section
+      ref={ref}
+      id={`phase-${phase.id}`}
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        padding: "80px 64px",
+        borderBottom: "1px solid var(--rule)",
+        borderLeft: `3px solid ${isActive ? "var(--rev)" : "transparent"}`,
+        opacity: inView ? 1 : 0,
+        transform: inView ? "translateY(0)" : "translateY(52px)",
+        transition:
+          "opacity 750ms cubic-bezier(.4,0,.2,1), " +
+          "transform 750ms cubic-bezier(.4,0,.2,1), " +
+          "border-color 0.35s ease",
+        position: "relative",
+      }}
+    >
+      <div style={{ maxWidth: 880, width: "100%" }}>
+
+        {/* Número + línea + dot de estado */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 20, marginBottom: 36,
+        }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: ".22em",
+            fontVariantNumeric: "tabular-nums",
+            color: isDone ? "var(--ink-3)" : isActive ? "var(--rev)" : "var(--rule)",
+            transition: "color 0.35s",
+            flexShrink: 0,
+          }}>
+            {phase.num}
+          </span>
+          <div style={{
+            flex: 1, height: 1,
+            background: isDone ? "var(--ink-2)" : "var(--rule)",
+            transition: "background 0.35s",
+          }} />
+          <div style={{
+            width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
+            border: `2px solid ${isDone ? "var(--ink)" : isActive ? "var(--rev)" : "var(--rule)"}`,
+            background: isDone ? "var(--ink)" : isActive ? "var(--rev)" : "transparent",
+            transition: "all 0.35s",
+            ...(isActive ? { boxShadow: "0 0 0 5px rgba(214,40,40,.13)" } : {}),
+          }}>
+            {isDone && (
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ display: "block", margin: "1px" }}>
+                <polyline points="1,4 3,6 7,1.5" stroke="var(--paper)"
+                  strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+        </div>
+
+        {/* Label */}
+        <h2 style={{
+          fontSize: "clamp(36px, 5vw, 58px)",
+          fontWeight: 900,
+          letterSpacing: "-.03em",
+          lineHeight: 1.0,
+          color: isPending ? "var(--ink-3)" : "var(--ink)",
+          transition: "color 0.35s",
+          marginBottom: 12,
+        }}>
+          {phase.label}
+        </h2>
+
+        {/* Sub */}
+        <div className="kicker" style={{ marginBottom: 40, fontWeight: 500 }}>
+          {phase.sub}
+        </div>
+
+        {/* Descripción */}
+        <p style={{
+          fontSize: 16,
+          lineHeight: 1.82,
+          color: isPending ? "var(--ink-3)" : "var(--ink-2)",
+          maxWidth: 740,
+          whiteSpace: "pre-line",
+          transition: "color 0.35s",
+          marginBottom: phase.algo ? 36 : 0,
+        }}>
+          {phase.desc}
+        </p>
+
+        {/* Bloque algoritmo */}
+        {phase.algo && (
+          <pre style={{
+            fontFamily: "'SF Mono', 'Fira Code', Consolas, monospace",
+            fontSize: 13,
+            lineHeight: 2,
+            color: isPending ? "var(--ink-3)" : "var(--ink-2)",
+            background: isActive ? "rgba(214,40,40,.03)" : "var(--paper-2)",
+            border: `1px solid ${isActive ? "rgba(214,40,40,.22)" : "var(--rule)"}`,
+            padding: "22px 30px",
+            whiteSpace: "pre",
+            overflowX: "auto",
+            maxWidth: 640,
+            transition: "all 0.35s",
+          }}>
+            {phase.algo}
+          </pre>
+        )}
+
+        {/* Métrica */}
+        {metric && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 10,
+            marginTop: 32,
+            padding: "9px 18px",
+            background: isDone ? "var(--paper-2)" : "rgba(214,40,40,.05)",
+            border: `1px solid ${isDone ? "var(--rule)" : "rgba(214,40,40,.22)"}`,
+            fontSize: 12, fontWeight: 700, letterSpacing: ".06em",
+            color: isDone ? "var(--ink-2)" : "var(--rev)",
+            transition: "all 0.3s",
+          }}>
+            {isActive && (
+              <span style={{
+                width: 6, height: 6, borderRadius: "50%",
+                background: "var(--rev)",
+                animation: "kdd-pulse 1.2s ease-in-out infinite",
+              }} />
+            )}
+            {isDone ? "✓ " : ""}{metric}
+          </div>
+        )}
+
+        {/* Actividad actual */}
+        {isActive && activity && (
+          <div style={{
+            marginTop: 10,
+            fontSize: 11,
+            color: "var(--ink-3)",
+            fontFamily: "'SF Mono', 'Fira Code', monospace",
+            letterSpacing: ".02em",
+            maxWidth: 700,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            → {activity}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ── Componente principal ──────────────────────────────────────────
 export default function Scraper() {
   const [running, setRunning]           = useState(false);
   const [started, setStarted]           = useState(false);
@@ -133,6 +486,7 @@ export default function Scraper() {
   const [isoWeek, setIsoWeek]           = useState(null);
   const [summary, setSummary]           = useState(null);
   const [error, setError]               = useState(null);
+  const [logs, setLogs]                 = useState([]);
   const phaseRef = useRef(-1);
 
   const handleRun = async () => {
@@ -145,6 +499,7 @@ export default function Scraper() {
     setIsoWeek(null);
     setSummary(null);
     setError(null);
+    setLogs([]);
 
     try {
       const response = await runScraper();
@@ -171,18 +526,20 @@ export default function Scraper() {
             if (data.type === "log") {
               const msg = data.message || "";
 
-              // Extraer semana ISO
+              setLogs(prev => {
+                const next = [...prev, cleanLog(msg)];
+                return next.length > 300 ? next.slice(-300) : next;
+              });
+
               const wm = msg.match(/Semana ISO\s*[:\s]+(\d{4}-W\d{2})/i);
               if (wm) setIsoWeek(wm[1]);
 
-              // Transición de fase
               const next = nextPhaseFrom(msg, phaseRef.current);
               if (next !== null) {
                 phaseRef.current = next;
                 setCurrentPhase(next);
               }
 
-              // Métricas y actividad en tiempo real
               const metric = parseMetric(msg);
               if (metric) {
                 setPhaseMetrics(prev => ({ ...prev, [metric.phase]: metric.text }));
@@ -208,313 +565,186 @@ export default function Scraper() {
     }
   };
 
-  // Estado de cada fase: 'idle' | 'active' | 'complete' | 'pending'
+  // Auto-scroll a la fase activa
+  useEffect(() => {
+    if (currentPhase >= 0 && currentPhase < PHASES.length) {
+      setTimeout(() => {
+        document.getElementById(`phase-${PHASES[currentPhase].id}`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    }
+  }, [currentPhase]);
+
   const stateOf = (i) => {
     if (currentPhase === -1) return "idle";
-    if (currentPhase > i)    return "complete";
-    if (currentPhase === i)  return "active";
+    if (currentPhase > i)   return "complete";
+    if (currentPhase === i) return "active";
     return "pending";
   };
 
   return (
-    <div style={{ maxWidth: 780, margin: "0 auto", padding: "0 40px 100px" }}>
+    <div>
 
       {/* ── HERO ─────────────────────────────────────────────── */}
-      <div style={{ paddingTop: 64, paddingBottom: 52, borderBottom: "1px solid var(--rule)", marginBottom: 72 }}>
-        <div className="kicker" style={{ marginBottom: 18 }}>
-          UAZ · Ingeniería de Software · Tesis · KDD
-        </div>
+      <section style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        padding: "80px 64px",
+        borderBottom: "1px solid var(--rule)",
+      }}>
+        <div>
+          <div className="kicker" style={{ marginBottom: 22 }}>
+            UAZ · Ingeniería de Software · Tesis · KDD
+          </div>
 
-        <h1 style={{
-          fontSize: 46,
-          fontWeight: 900,
-          lineHeight: 1.08,
-          letterSpacing: "-.025em",
-          color: "var(--ink)",
-          marginBottom: 16,
-        }}>
-          Pipeline{" "}
-          <em style={{ fontStyle: "italic", color: "var(--rev)" }}>KDD</em>
-        </h1>
+          <h1 style={{
+            fontSize: "clamp(52px, 7vw, 88px)",
+            fontWeight: 900,
+            lineHeight: 1.0,
+            letterSpacing: "-.035em",
+            color: "var(--ink)",
+            marginBottom: 26,
+          }}>
+            Pipeline{" "}
+            <em style={{ fontStyle: "italic", color: "var(--rev)" }}>KDD</em>
+          </h1>
 
-        <p style={{ fontSize: 15, color: "var(--ink-2)", maxWidth: 500, lineHeight: 1.7, marginBottom: 36 }}>
-          Recolección, preprocesamiento y clustering semántico de cobertura
-          periodística de 8 medios mexicanos en tiempo real.
-        </p>
+          <p style={{
+            fontSize: 17,
+            color: "var(--ink-2)",
+            maxWidth: 520,
+            lineHeight: 1.75,
+            marginBottom: 56,
+          }}>
+            Recolección, preprocesamiento y clustering semántico de cobertura
+            periodística de 8 medios mexicanos en tiempo real.
+          </p>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
-          <button
-            onClick={handleRun}
-            disabled={running}
-            style={{
-              padding: "13px 30px",
-              background: running ? "transparent" : "var(--ink)",
-              color: running ? "var(--ink-3)" : "var(--paper)",
-              border: `1.5px solid ${running ? "var(--rule)" : "var(--ink)"}`,
-              fontWeight: 700,
-              fontSize: 12,
-              letterSpacing: ".12em",
-              textTransform: "uppercase",
-              cursor: running ? "wait" : "pointer",
-              transition: "background .15s, color .15s, border-color .15s",
-            }}
-          >
-            {running ? "Ejecutando…" : started ? "Ejecutar de nuevo" : "Iniciar pipeline"}
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
+            <button
+              onClick={handleRun}
+              disabled={running}
+              style={{
+                padding: "15px 36px",
+                background: running ? "transparent" : "var(--ink)",
+                color: running ? "var(--ink-3)" : "var(--paper)",
+                border: `1.5px solid ${running ? "var(--rule)" : "var(--ink)"}`,
+                fontWeight: 700,
+                fontSize: 12,
+                letterSpacing: ".14em",
+                textTransform: "uppercase",
+                cursor: running ? "wait" : "pointer",
+                transition: "background .15s, color .15s, border-color .15s",
+              }}
+            >
+              {running ? "Ejecutando…" : started ? "Ejecutar de nuevo" : "Iniciar pipeline"}
+            </button>
 
-          {isoWeek && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{
-                display: "inline-block",
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "var(--rev)",
-                ...(running ? { animation: "kdd-pulse 1.4s ease-in-out infinite" } : {}),
-              }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)", letterSpacing: ".04em" }}>
-                Semana {isoWeek}
+            {isoWeek && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: "var(--rev)",
+                  display: "inline-block",
+                  ...(running ? { animation: "kdd-pulse 1.4s ease-in-out infinite" } : {}),
+                }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)", letterSpacing: ".04em" }}>
+                  Semana {isoWeek}
+                </span>
+              </div>
+            )}
+
+            {error && (
+              <span style={{ fontSize: 13, color: "var(--rev)" }}>
+                Error: {error}
               </span>
-            </div>
-          )}
+            )}
+          </div>
 
-          {error && (
-            <span style={{ fontSize: 13, color: "var(--rev)" }}>
-              Error: {error}
-            </span>
-          )}
+          {/* Scroll indicator */}
+          <div style={{
+            marginTop: 88,
+            display: "flex", alignItems: "center", gap: 16,
+            color: "var(--ink-3)", fontSize: 11,
+            letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 600,
+          }}>
+            <span style={{ display: "block", width: 1, height: 36, background: "var(--rule)" }} />
+            Scroll para explorar el pipeline
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── TIMELINE ─────────────────────────────────────────── */}
-      <div>
-        {PHASES.map((phase, i) => {
-          const state    = stateOf(i);
-          const isActive = state === "active";
-          const isDone   = state === "complete";
-          const isPending = state === "pending";
-          const metric   = phaseMetrics[i];
-          const activity = phaseActivity[i];
-          const dimmed   = isPending;
-
-          return (
-            <div key={phase.id} style={{ display: "flex", gap: 0 }}>
-
-              {/* ── Carril vertical (dot + línea) ── */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 52, flexShrink: 0, paddingTop: 3 }}>
-                {/* Dot */}
-                <div style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  zIndex: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: `2px solid ${isDone ? "var(--ink)" : isActive ? "var(--rev)" : "var(--rule)"}`,
-                  background: isDone ? "var(--ink)" : isActive ? "var(--rev)" : "transparent",
-                  transition: "all .35s ease",
-                  ...(isActive ? { boxShadow: "0 0 0 5px rgba(214,40,40,.12)" } : {}),
-                }}>
-                  {isDone && (
-                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                      <polyline
-                        points="1.5,4.5 3.5,6.5 7.5,2"
-                        stroke="var(--paper)"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </div>
-
-                {/* Línea conectora */}
-                {i < PHASES.length - 1 && (
-                  <div style={{
-                    width: 1,
-                    flexGrow: 1,
-                    minHeight: 32,
-                    background: isDone ? "var(--ink-2)" : "var(--rule)",
-                    marginTop: 5,
-                    marginBottom: 5,
-                    transition: "background .35s ease",
-                  }} />
-                )}
-              </div>
-
-              {/* ── Contenido de la fase ── */}
-              <div style={{
-                flex: 1,
-                paddingLeft: 28,
-                paddingBottom: i < PHASES.length - 1 ? 52 : 0,
-                borderLeft: `2px solid ${isActive ? "var(--rev)" : "transparent"}`,
-                marginLeft: -1,
-                transition: "border-color .3s ease",
-              }}>
-                {/* Cabecera */}
-                <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: ".22em",
-                    fontVariantNumeric: "tabular-nums",
-                    color: isDone ? "var(--ink-3)" : isActive ? "var(--rev)" : "var(--rule)",
-                    transition: "color .35s",
-                  }}>
-                    {phase.num}
-                  </span>
-
-                  <h2 style={{
-                    fontSize: 21,
-                    fontWeight: 800,
-                    letterSpacing: "-.015em",
-                    color: dimmed ? "var(--ink-3)" : "var(--ink)",
-                    transition: "color .35s",
-                  }}>
-                    {phase.label}
-                  </h2>
-
-                  <span className="kicker" style={{ fontWeight: 500, letterSpacing: ".1em" }}>
-                    {phase.sub}
-                  </span>
-                </div>
-
-                {/* Descripción */}
-                <p style={{
-                  fontSize: 14,
-                  lineHeight: 1.75,
-                  color: dimmed ? "var(--ink-3)" : "var(--ink-2)",
-                  maxWidth: 620,
-                  whiteSpace: "pre-line",
-                  marginBottom: phase.algo ? 20 : 0,
-                  transition: "color .35s",
-                }}>
-                  {phase.desc}
-                </p>
-
-                {/* Bloque de algoritmo */}
-                {phase.algo && (
-                  <pre style={{
-                    fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-                    fontSize: 12,
-                    lineHeight: 1.85,
-                    color: dimmed ? "var(--ink-3)" : "var(--ink-2)",
-                    background: isActive ? "rgba(214,40,40,.03)" : "var(--paper-2)",
-                    border: `1px solid ${isActive ? "rgba(214,40,40,.18)" : "var(--rule)"}`,
-                    padding: "16px 22px",
-                    whiteSpace: "pre",
-                    overflowX: "auto",
-                    maxWidth: 560,
-                    marginTop: 0,
-                    transition: "all .35s",
-                  }}>
-                    {phase.algo}
-                  </pre>
-                )}
-
-                {/* Métrica en tiempo real */}
-                {metric && (
-                  <div style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginTop: 18,
-                    padding: "6px 14px",
-                    background: isDone ? "var(--paper-2)" : "rgba(214,40,40,.05)",
-                    border: `1px solid ${isDone ? "var(--rule)" : "rgba(214,40,40,.18)"}`,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    letterSpacing: ".04em",
-                    color: isDone ? "var(--ink-2)" : "var(--rev)",
-                    transition: "all .3s",
-                  }}>
-                    {isActive && (
-                      <span style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: "var(--rev)",
-                        flexShrink: 0,
-                        animation: "kdd-pulse 1.2s ease-in-out infinite",
-                      }} />
-                    )}
-                    {isDone ? "✓ " : ""}
-                    {metric}
-                  </div>
-                )}
-
-                {/* Línea de actividad (artículo actual en fase 02) */}
-                {isActive && activity && (
-                  <div style={{
-                    marginTop: 8,
-                    fontSize: 11,
-                    color: "var(--ink-3)",
-                    fontFamily: "'SF Mono', 'Fira Code', monospace",
-                    letterSpacing: ".02em",
-                    maxWidth: 600,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}>
-                    → {activity}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {/* ── FASES ────────────────────────────────────────────── */}
+      {PHASES.map((phase, i) => (
+        <PhaseSection
+          key={phase.id}
+          phase={phase}
+          i={i}
+          state={stateOf(i)}
+          metric={phaseMetrics[i]}
+          activity={phaseActivity[i]}
+        />
+      ))}
 
       {/* ── RESUMEN FINAL ─────────────────────────────────────── */}
       {summary && (
-        <div style={{ marginTop: 72, paddingTop: 48, borderTop: "2px solid var(--ink)" }}>
-          <div className="kicker" style={{ marginBottom: 36 }}>
-            Resultado · Pipeline KDD completado
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
-            {[
-              { label: "Eventos detectados", value: summary.eventos_detectados, color: "var(--rev)" },
-              { label: "Artículos guardados", value: summary.articulos_guardados, color: "var(--ink)" },
-              { label: "Duración total",      value: summary.duracion,            color: "var(--graphite)", mono: true },
-            ].map((stat, i) => (
-              <div key={i} style={{
-                padding: "8px 32px 8px 0",
-                borderRight: i < 2 ? "1px solid var(--rule)" : "none",
-                marginRight: i < 2 ? 32 : 0,
-              }}>
-                <div className="kicker" style={{ marginBottom: 10 }}>{stat.label}</div>
-                <div style={{
-                  fontSize: stat.mono ? 28 : 46,
-                  fontWeight: 900,
-                  color: stat.color,
-                  lineHeight: 1,
-                  letterSpacing: stat.mono ? ".04em" : "-.025em",
-                  fontVariantNumeric: "tabular-nums",
-                  fontFamily: stat.mono ? "'SF Mono', monospace" : "inherit",
-                }}>
-                  {stat.value}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {summary.articulos_fallidos > 0 && (
-            <div style={{
-              marginTop: 24,
-              padding: "12px 16px",
-              background: "var(--paper-2)",
-              border: "1px solid var(--rule)",
-              fontSize: 13,
-              color: "var(--ink-3)",
-            }}>
-              {summary.articulos_fallidos} artículos no pudieron extraerse — sin impacto en los eventos detectados.
+        <section style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          padding: "80px 64px",
+        }}>
+          <div>
+            <div className="kicker" style={{ marginBottom: 40 }}>
+              Resultado · Pipeline KDD completado
             </div>
-          )}
-        </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", maxWidth: 760 }}>
+              {[
+                { label: "Eventos detectados", value: summary.eventos_detectados, color: "var(--rev)" },
+                { label: "Artículos guardados", value: summary.articulos_guardados, color: "var(--ink)" },
+                { label: "Duración total",      value: summary.duracion,            color: "var(--graphite)", mono: true },
+              ].map((stat, idx) => (
+                <div key={idx} style={{
+                  padding: "8px 32px 8px 0",
+                  borderRight: idx < 2 ? "1px solid var(--rule)" : "none",
+                  marginRight: idx < 2 ? 32 : 0,
+                }}>
+                  <div className="kicker" style={{ marginBottom: 14 }}>{stat.label}</div>
+                  <div style={{
+                    fontSize: stat.mono ? 32 : 68,
+                    fontWeight: 900,
+                    color: stat.color,
+                    lineHeight: 1,
+                    letterSpacing: stat.mono ? ".04em" : "-.025em",
+                    fontVariantNumeric: "tabular-nums",
+                    fontFamily: stat.mono ? "'SF Mono', monospace" : "inherit",
+                  }}>
+                    {stat.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {summary.articulos_fallidos > 0 && (
+              <div style={{
+                marginTop: 36,
+                padding: "14px 20px",
+                background: "var(--paper-2)",
+                border: "1px solid var(--rule)",
+                fontSize: 13, color: "var(--ink-3)",
+                maxWidth: 500,
+              }}>
+                {summary.articulos_fallidos} artículos no pudieron extraerse — sin impacto en los eventos detectados.
+              </div>
+            )}
+          </div>
+        </section>
       )}
+
+      {/* ── PANEL DE CONSOLA ──────────────────────────────────── */}
+      <ConsolePanel logs={logs} running={running} visible={started} currentPhase={currentPhase} />
     </div>
   );
 }

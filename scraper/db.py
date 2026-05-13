@@ -198,6 +198,40 @@ def obtener_fuentes() -> list:
     ]
 
 
+def obtener_evento_id_por_urls(urls: list) -> int | None:
+    """
+    Busca si alguna URL del cluster ya está en la BD con un evento_id.
+    Si existe, retorna ese evento_id para que los artículos nuevos del
+    mismo cluster se agreguen al evento existente en lugar de crear uno
+    duplicado en re-ejecuciones de la misma semana.
+    """
+    if not urls:
+        return None
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute(
+        "SELECT evento_id FROM articulos WHERE url = ANY(%s) AND evento_id IS NOT NULL LIMIT 1;",
+        (urls,)
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row[0] if row else None
+
+
+def actualizar_num_fuentes(evento_id: int, num_fuentes: int):
+    """Actualiza num_fuentes al valor máximo observado para el evento."""
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute(
+        "UPDATE eventos SET num_fuentes = GREATEST(num_fuentes, %s) WHERE id = %s;",
+        (num_fuentes, evento_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def obtener_fuente_por_nombre(nombre: str) -> dict | None:
     """Busca una fuente por nombre exacto. Retorna None si no existe."""
     conn = get_connection()
