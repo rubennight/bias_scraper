@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { runScraper } from "../api";
 
+// ── 8 medios del espectro ideológico ──────────────────────────────
+const GROUPS = [
+  { key: "izquierda", label: "Izquierda",  color: "var(--rev)",      medios: ["La Jornada", "El Informador"] },
+  { key: "critico",   label: "Crítico",    color: "var(--ochre)",    medios: ["Aristegui Noticias", "El Financiero"] },
+  { key: "centro",    label: "Centro",     color: "var(--graphite)", medios: ["Animal Político", "El Universal"] },
+  { key: "derecha",   label: "Derecha",    color: "var(--ink)",      medios: ["24 Horas", "El Norte"] },
+];
+
 // ── Fases del pipeline ─────────────────────────────────────────────
 const PHASES = [
   {
@@ -8,79 +16,108 @@ const PHASES = [
     num: "00",
     label: "Inicialización",
     sub: "Ventana ISO · Tablas · Fuentes",
-    desc: `Se establece la ventana temporal ISO — bloques fijos de lunes a domingo —
-que garantiza que múltiples ejecuciones en la misma semana no generen duplicados.
-La clave está en que el filtro usa la fecha de publicación del artículo (fecha_pub),
-no la fecha de ejecución del pipeline. Se verifican las tablas de PostgreSQL y se
-registran las 8 fuentes del espectro ideológico: 2 de izquierda, 2 críticas,
-2 de centro y 2 de derecha.`,
-    algo: null,
+    desc: `Se establece la ventana temporal ISO — bloques fijos de lunes a domingo — que garantiza que múltiples ejecuciones en la misma semana no generen duplicados. La clave: el filtro usa la fecha de publicación del artículo (fecha_pub), no la fecha de ejecución del pipeline.`,
+    detail: `fecha.weekday() retorna 0 para lunes, 6 para domingo. Restar ese valor siempre lleva al lunes de esa semana. Correr el pipeline 5 veces en la misma semana produce la misma ventana — sin duplicados. El 74% de los artículos recuperables por RSS tienen fecha del día de ejecución, con un rango real de 3-4 días.`,
+    algo: `lunes   = fecha - timedelta(days=fecha.weekday())
+domingo = lunes + timedelta(days=6)
+# La ventana es fija: mismo lunes sin importar cuándo ejecutes`,
+    rejected: null,
+    showMedios: false,
   },
   {
     id: "seleccion",
     num: "01",
     label: "Fase 1 — Selección",
-    sub: "Descarga RSS · Filtrado temático",
-    desc: `El sistema lee los feeds RSS de los 8 medios — archivos XML que cada
-periódico actualiza automáticamente con sus artículos más recientes de secciones
-de política, economía y seguridad. Se descargan hasta ~390 artículos.
-Un filtro de dos pasos sobre el titular descarta deportes y entretenimiento,
-y conserva solo artículos que contengan al menos una palabra de la lista
-político-noticiosa. Resultado típico: ~113 artículos relevantes.`,
-    algo: `# Paso 1 — Lista de exclusión
-any(p in titular for p in EXCLUIR)      → descartado
+    sub: "RSS · 8 medios · Filtrado temático",
+    desc: `El sistema lee los feeds RSS de 8 medios con orientaciones ideológicas distintas. No descarga artículos manualmente: cada medio publica un archivo XML que actualiza automáticamente con sus artículos más recientes de política, economía y seguridad.`,
+    detail: `El balance 2-2-2-2 es metodológicamente esencial. Con 6 medios de izquierda y 2 de derecha, el clasificador aprendería que el lenguaje de izquierda es "normal". El balance evita ese sesgo estructural en el corpus de entrenamiento.
 
-# Paso 2 — Lista blanca
-any(p in titular for p in RELEVANTES)   → conservado`,
+Cuatro medios descartados empíricamente: Sin Embargo (HTTP 403 — bloquea bots), Proceso (XML malformado), Milenio y El Heraldo (HTTP 404). Decisión documentada — no fue capricho, fue verificación empírica.
+
+Google Trends fue descartado como señal de relevancia: pytrends usa endpoints internos que Google deprecó. Todos devuelven HTTP 404. La descarga directa por secciones RSS es metodológicamente superior porque no introduce el sesgo de Google en qué eventos analizar.`,
+    algo: `# Filtrado en dos pasos sobre el titular del artículo
+
+Paso 1 — Lista de exclusión:
+any(p in titular for p in EXCLUIR)    → descartado inmediatamente
+# "fútbol", "vs", "en vivo", "BTS", "granizada"...
+
+Paso 2 — Lista blanca:
+any(p in titular for p in RELEVANTES) → conservado
+# "gobierno", "Trump", "violencia", "aranceles", "fiscalía"...
+
+# Resultado típico: 390 artículos → 113 relevantes (71% descartado)`,
+    rejected: null,
+    showMedios: true,
   },
   {
     id: "extraccion",
     num: "02",
-    label: "Fase 2 — Extracción y TF-IDF",
-    sub: "Newspaper3k · Playwright · Keywords",
-    desc: `Para cada artículo filtrado, Newspaper3k descarga el HTML completo y
-extrae solo el cuerpo periodístico, eliminando menús, publicidad y pie de página.
-Las citas directas entre comillas se eliminan para aislar el lenguaje del periodista
-— no el de sus fuentes. TF-IDF convierte el cuerpo en keywords: palabras que son
-frecuentes en este artículo específico pero raras en el corpus general. Esa rareza
-relativa las hace únicas e identificatorias del evento que cubren.`,
+    label: "Fase 2 — Preprocesamiento",
+    sub: "Newspaper3k · Playwright · TF-IDF",
+    desc: `Para cada artículo filtrado, Newspaper3k descarga el HTML completo y extrae solo el cuerpo periodístico, eliminando menús, publicidad y pie de página. Las citas directas entre comillas se eliminan para aislar el lenguaje del periodista — no el de sus fuentes. TF-IDF convierte el cuerpo en keywords.`,
+    detail: `Si Newspaper3k falla —porque el sitio usa JavaScript dinámico y el contenido no está en el HTML estático— Playwright actúa como fallback: un navegador Chromium real ejecuta el JS y extrae el contenido ya renderizado. Es más lento pero funciona en sitios modernos.
+
+TF-IDF responde: ¿qué palabras son especialmente importantes en este artículo comparado con todos los demás? Una palabra que aparece mucho aquí Y poco en el corpus general tiene score alto — esa es la keyword del evento.`,
     algo: `TF(t, d)  = ocurrencias(t, d) / total_palabras(d)
 IDF(t)    = log( N / documentos_con_t )
+TF·IDF    = TF × IDF
 
-TF·IDF    = TF × IDF  →  alto = keyword del evento`,
+# Caso Rocha Moya (ejemplo real):
+"rocha"     → 0.020 × 1.30 = 0.026   ← keyword alta
+"sinaloa"   → 0.015 × 1.10 = 0.016   ← keyword media
+"gobierno"  → 0.010 × 0.04 = 0.0004  ← muy común → no es keyword
+"el"        → 0.050 × 0.00 = 0.000   ← stopword
+
+# Resultado típico: 101 / 113 artículos con keywords exitosas`,
+    rejected: null,
+    showMedios: false,
   },
   {
     id: "grafo",
     num: "03",
-    label: "Fase 3 — Grafo + BFS",
-    sub: "Co-ocurrencia de keywords · Clustering",
-    desc: `Se construye un grafo donde cada nodo es un artículo. Para cada par de
-artículos de fuentes distintas se calcula la intersección de sus keywords TF-IDF:
-si comparten ≥4 keywords, se traza una arista entre ellos. Para 101 artículos
-hay 5,050 comparaciones posibles; la intersección de conjuntos Python es O(min(|A|,|B|)).
-BFS (Breadth-First Search) recorre el grafo y agrupa artículos en componentes
-conectadas. Solo se conservan clusters con artículos de ≥3 fuentes distintas
-— eso garantiza diversidad ideológica real para comparar sesgo.`,
-    algo: `kw_A ∩ kw_B ≥ 4  →  arista(A, B)
+    label: "Fase 3 — Transformación",
+    sub: "Grafo de co-ocurrencia · BFS · Clustering",
+    desc: `Se construye un grafo donde cada nodo es un artículo. Si dos artículos de fuentes distintas comparten ≥4 keywords TF-IDF, se traza una arista entre ellos. Para 101 artículos hay 5,050 comparaciones posibles. BFS recorre el grafo y agrupa en componentes conectadas. Cada componente es un evento.`,
+    detail: `La condición de fuentes distintas es crítica: no tiene sentido conectar dos artículos del mismo periódico. El parámetro MIN=4 se eligió empíricamente — con 3 había demasiado ruido, artículos de temas distintos se conectaban por keywords genéricas del contexto político mexicano.
 
-BFS(grafo)  →  componentes conectadas
-             cada componente = un evento`,
+Solo se conservan clusters con artículos de ≥3 fuentes distintas — eso garantiza diversidad ideológica real para comparar sesgo. Un evento cubierto por 2 medios del mismo lado del espectro no aporta información comparativa útil.`,
+    algo: `kw_A ∩ kw_B ≥ 4  →  arista(A, B)     # intersección de sets: O(min(|A|,|B|))
+
+BFS(grafo) → componentes conectadas
+           → descartar clusters con < 3 fuentes distintas
+
+# Validado 04/05/2026:
+# 3 eventos · 56 artículos · 0 fallos · ~9 minutos
+# Rocha/Sinaloa: 49 art. · 8 fuentes
+# El Chapo extradición: 4 art. · 4 fuentes
+# Elección CDMX: 3 art. · 3 fuentes`,
+    rejected: [
+      {
+        name: "XLM-RoBERTa + DBSCAN",
+        reason: "Embeddings de 768 dimensiones. Problema: similaridad media 0.9982 entre todos los artículos. El modelo base sin fine-tuning ve «noticias en español» y las agrupa juntas — no distingue el caso Rocha Moya del GP de Miami. Ambos son texto periodístico formal en español.",
+      },
+      {
+        name: "AgglomerativeClustering",
+        reason: "Más estricto que DBSCAN: un artículo entra al cluster solo si es similar a TODOS sus miembros. Pero el problema de fondo era el mismo: embeddings demasiado similares entre sí → cualquier umbral producía un solo cluster gigante con todos los artículos.",
+      },
+    ],
+    showMedios: false,
   },
   {
     id: "guardado",
     num: "04",
     label: "Persistencia",
-    sub: "Guardado en PostgreSQL",
-    desc: `Cada evento detectado y sus artículos se persisten en la base de datos.
-Las keywords TF-IDF se guardan en una tabla separada (articulo_keywords) indexada
-para búsquedas eficientes. El esquema es idempotente: la restricción UNIQUE en
-URLs y la ventana ISO previenen duplicados aunque el pipeline se ejecute
-múltiples veces en la misma semana.`,
+    sub: "PostgreSQL · Idempotencia · Keywords indexadas",
+    desc: `Cada evento detectado y sus artículos se persisten en PostgreSQL. Las keywords TF-IDF se guardan en una tabla separada (articulo_keywords) indexada para búsquedas eficientes. El esquema es idempotente: la restricción UNIQUE en URLs y la ventana ISO previenen duplicados aunque el pipeline se ejecute múltiples veces en la misma semana.`,
+    detail: `Idempotencia significa que correr el pipeline N veces produce el mismo resultado que correrlo una vez. Esto es fundamental para un pipeline de investigación reproducible. El timestamp de cada artículo (fecha_pub) determina su ventana — no la fecha de ejecución.`,
     algo: null,
+    rejected: null,
+    showMedios: false,
   },
 ];
 
-// ── Detección de fase según patrones de log ──────────────────────
+// ── Detección de fase y métricas por log ──────────────────────────
+
 function nextPhaseFrom(msg, current) {
   if (current < 1 && /\[Selección\]/i.test(msg)) return 1;
   if (current < 2 && /\[Transformación\]/i.test(msg)) return 2;
@@ -91,402 +128,159 @@ function nextPhaseFrom(msg, current) {
 
 function parseMetric(msg) {
   let m;
-
   m = msg.match(/\[Selección\].*?(\d+)\s+artículos en semana/i);
   if (m) return { phase: 1, text: `${m[1]} artículos descargados` };
-
   m = msg.match(/\[Filtrado temático\]\s+(\d+)\s+relevantes\s*·\s*(\d+)/i);
   if (m) return { phase: 1, text: `${m[1]} relevantes · ${m[2]} descartados` };
-
   m = msg.match(/\[Transformación\]\s+Extrayendo keywords de\s+(\d+)/i);
   if (m) return { phase: 2, text: `${m[1]} artículos por procesar` };
-
   m = msg.match(/\[(\d+)\/(\d+)\]\s+(.+?):\s+(.*)/);
-  if (m) return {
-    phase: 2,
-    text: `${m[1]} / ${m[2]} artículos procesados`,
-    activity: `${m[3]}: ${m[4].replace(/→.*$/, "").trim().slice(0, 72)}`,
-  };
-
+  if (m) return { phase: 2, text: `${m[1]} / ${m[2]} artículos procesados`, activity: `${m[3]}: ${m[4].replace(/→.*$/, "").trim().slice(0, 72)}` };
   m = msg.match(/\[Transformación\]\s+(\d+)\s+artículos con keywords/i);
   if (m) return { phase: 2, text: `${m[1]} artículos con keywords` };
-
   m = msg.match(/\[Grafo\]\s+(\d+)\s+artículos con/i);
   if (m) return { phase: 3, text: `${m[1]} artículos conectados en grafo` };
-
   m = msg.match(/\[Grafo\]\s+(\d+)\s+componentes/i);
   if (m) return { phase: 3, text: `${m[1]} componentes detectadas` };
-
   m = msg.match(/\[Filtrado\]\s+(\d+)\s+eventos válidos/i);
   if (m) return { phase: 3, text: `${m[1]} eventos válidos` };
-
   return null;
 }
 
-// ── Limpia el prefijo de log antes de mostrar ────────────────────
-function cleanLog(raw) {
-  return raw
-    .replace(/^\[Scraper std\w+\]\s+\S+\s+\S+\s+\[\w+\]\s*/i, "")
-    .trim();
-}
+// ── Consola flotante ───────────────────────────────────────────────
 
-// ── Línea de consola — anima al montarse ─────────────────────────
-function ConsoleLine({ text }) {
-  const [show, setShow] = useState(false);
+function Console({ logs, running, visible, onToggle }) {
+  const bottomRef = useRef(null);
+
   useEffect(() => {
-    const raf = requestAnimationFrame(() => setShow(true));
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  return (
-    <div style={{
-      opacity: show ? 0.78 : 0,
-      transform: show ? "translateY(0)" : "translateY(7px)",
-      transition: "opacity 0.4s ease, transform 0.4s ease",
-      fontSize: 11,
-      lineHeight: 1.65,
-      color: "#8a8272",
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      fontFamily: "'SF Mono', 'Fira Code', Consolas, monospace",
-    }}>
-      <span style={{ color: "#d62828", marginRight: 10, userSelect: "none" }}>›</span>
-      {text}
-    </div>
-  );
-}
-
-// ── Panel de consola flotante (derecha) ──────────────────────────
-function ConsolePanel({ logs, running, visible, currentPhase }) {
-  const endRef  = useRef(null);
-  const [fadedPhase, setFadedPhase] = useState(currentPhase);
-  const [fadeState, setFadeState]   = useState("in");
-  const [wide, setWide]             = useState(
-    typeof window !== "undefined" && window.innerWidth >= 1200
-  );
-
-  // Fade suave al cambiar fase
-  useEffect(() => {
-    if (currentPhase === fadedPhase) return;
-    const t1 = setTimeout(() => setFadeState("out"), 0);
-    const t2 = setTimeout(() => {
-      setFadedPhase(currentPhase);
-      setFadeState("in");
-    }, 260);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [currentPhase, fadedPhase]);
-
-  // Responsive: ocultar en pantallas pequeñas
-  useEffect(() => {
-    const onResize = () => setWide(window.innerWidth >= 1200);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  // Auto-scroll al fondo
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs.length]);
 
-  if (!visible || !wide) return null;
-
-  const phase = fadedPhase >= 0 && fadedPhase < PHASES.length
-    ? PHASES[fadedPhase] : null;
+  if (!logs.length) return null;
 
   return (
     <div style={{
       position: "fixed",
-      right: 44,
-      top: "50%",
-      transform: "translateY(-50%)",
-      width: 540,
-      height: 480,
-      background: "rgba(10, 9, 7, 0.96)",
-      border: `1.5px solid ${running ? "var(--rev)" : "#2a2720"}`,
-      backdropFilter: "blur(12px)",
-      zIndex: 200,
-      transition: "border-color 0.5s ease",
-      display: "flex",
-      flexDirection: "column",
-      overflow: "hidden",
+      bottom: 24,
+      right: 24,
+      width: 460,
+      zIndex: 300,
+      boxShadow: "0 12px 40px rgba(0,0,0,.35)",
+      fontFamily: "'SF Mono','Fira Code','Consolas',monospace",
     }}>
-
-      {/* ── Cabecera con fase actual ── */}
+      {/* Barra de título */}
       <div style={{
-        padding: "16px 18px 14px",
-        borderBottom: "1px solid #1a1814",
-        flexShrink: 0,
-      }}>
-        {/* Fila superior: label + dot */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-        }}>
-          {running && (
-            <span style={{
-              width: 5, height: 5, borderRadius: "50%",
-              background: "var(--rev)", flexShrink: 0,
-              animation: "kdd-pulse 1.2s ease-in-out infinite",
-            }} />
-          )}
+        background: "#1a1816",
+        padding: "9px 14px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        borderBottom: "1px solid #2a2826",
+        cursor: "pointer",
+      }} onClick={onToggle}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: ".18em",
-            textTransform: "uppercase", color: "#38342a",
-            fontFamily: "'SF Mono', monospace",
-          }}>
-            Pipeline
+            width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+            background: running ? "#4ade80" : "#555",
+            animation: running ? "kdd-pulse 1s ease-in-out infinite" : "none",
+          }} />
+          <span style={{ fontSize: 10, color: "#666", letterSpacing: ".16em", textTransform: "uppercase", fontWeight: 600 }}>
+            {running ? "ejecutando" : "completado"} · pipeline log
+          </span>
+          <span style={{ fontSize: 11, color: "#444", marginLeft: 4 }}>
+            {logs.length} líneas
           </span>
         </div>
+        <span style={{ fontSize: 14, color: "#555", lineHeight: 1, userSelect: "none" }}>
+          {visible ? "−" : "+"}
+        </span>
+      </div>
 
-        {/* Fase con fade al cambiar */}
+      {/* Log lines */}
+      {visible && (
         <div style={{
-          opacity: fadeState === "in" ? 1 : 0,
-          transform: fadeState === "in" ? "translateY(0)" : "translateY(-6px)",
-          transition: "opacity 260ms cubic-bezier(.4,0,.2,1), transform 260ms cubic-bezier(.4,0,.2,1)",
-          minHeight: 38,
+          background: "#0e0d0b",
+          maxHeight: 230,
+          overflowY: "auto",
+          padding: "10px 14px 12px",
         }}>
-          {phase ? (
-            <>
-              <div style={{
-                fontSize: 10, letterSpacing: ".14em",
-                color: running ? "var(--rev)" : "#38342a",
-                fontFamily: "'SF Mono', monospace",
-                marginBottom: 4,
-                transition: "color 0.4s ease",
-              }}>
-                {phase.num}
-              </div>
-              <div style={{
-                fontSize: 12, fontWeight: 700,
-                color: "#6e6860", letterSpacing: "-.01em", lineHeight: 1.35,
-              }}>
-                {phase.label}
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: 11, color: "#2e2a22", fontFamily: "'SF Mono', monospace" }}>
-              —
+          {logs.slice(-80).map((line, i, arr) => (
+            <div
+              key={i}
+              style={{
+                fontSize: 11,
+                color: /error|fallo/i.test(line) ? "#f87171"
+                      : /✓|completado|guardado/i.test(line) ? "#4ade80"
+                      : /\[Grafo\]|\[Selección\]|\[Transformación\]/i.test(line) ? "#fbbf24"
+                      : "#6a6a62",
+                lineHeight: 1.75,
+                letterSpacing: ".01em",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+                animation: i === arr.length - 1 ? "fadeInLine .18s ease forwards" : "none",
+              }}
+            >
+              {line}
             </div>
-          )}
+          ))}
+          <div ref={bottomRef} />
         </div>
-      </div>
-
-      {/* ── Líneas de log ── */}
-      <div style={{
-        flex: 1,
-        minHeight: 0,
-        overflowY: "auto",
-        overflowX: "hidden",
-        padding: "10px 18px 12px",
-        display: "flex", flexDirection: "column", gap: 1,
-        scrollbarWidth: "thin",
-        scrollbarColor: "#2a2720 transparent",
-      }}>
-        {logs.slice(-15).map((line, i) => (
-          <ConsoleLine key={logs.length - 15 + i} text={line} />
-        ))}
-        <div ref={endRef} />
-      </div>
-
-      {/* ── Pie ── */}
-      <div style={{
-        padding: "8px 18px",
-        borderTop: "1px solid #1a1814",
-        fontSize: 10, color: "#2a2720",
-        fontFamily: "'SF Mono', monospace",
-        letterSpacing: ".1em",
-        display: "flex", justifyContent: "space-between",
-        flexShrink: 0,
-      }}>
-        <span>{logs.length} líneas</span>
-        {!running && logs.length > 0 && (
-          <span style={{ color: "#38342a" }}>✓ done</span>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-// ── Sección de fase full-screen ───────────────────────────────────
-function PhaseSection({ phase, i, state, metric, activity }) {
-  const ref = useRef(null);
-  const [inView, setInView] = useState(false);
+// ── Grid de 8 medios ──────────────────────────────────────────────
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setInView(true); },
-      { threshold: 0.08, rootMargin: "0px 0px -5% 0px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  const isActive  = state === "active";
-  const isDone    = state === "complete";
-  const isPending = state === "pending";
-
+function MediaGrid() {
   return (
-    <section
-      ref={ref}
-      id={`phase-${phase.id}`}
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        padding: "80px 64px",
-        borderBottom: "1px solid var(--rule)",
-        borderLeft: `3px solid ${isActive ? "var(--rev)" : "transparent"}`,
-        opacity: inView ? 1 : 0,
-        transform: inView ? "translateY(0)" : "translateY(52px)",
-        transition:
-          "opacity 750ms cubic-bezier(.4,0,.2,1), " +
-          "transform 750ms cubic-bezier(.4,0,.2,1), " +
-          "border-color 0.35s ease",
-        position: "relative",
-      }}
-    >
-      <div style={{ maxWidth: 880, width: "100%" }}>
-
-        {/* Número + línea + dot de estado */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 20, marginBottom: 36,
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(4, 1fr)",
+      gap: 0,
+      marginTop: 22,
+      border: "1px solid var(--rule)",
+    }}>
+      {GROUPS.map((g, gi) => (
+        <div key={g.key} style={{
+          borderRight: gi < 3 ? "1px solid var(--rule)" : "none",
+          padding: "14px 16px 16px",
         }}>
-          <span style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: ".22em",
-            fontVariantNumeric: "tabular-nums",
-            color: isDone ? "var(--ink-3)" : isActive ? "var(--rev)" : "var(--rule)",
-            transition: "color 0.35s",
-            flexShrink: 0,
-          }}>
-            {phase.num}
-          </span>
           <div style={{
-            flex: 1, height: 1,
-            background: isDone ? "var(--ink-2)" : "var(--rule)",
-            transition: "background 0.35s",
-          }} />
-          <div style={{
-            width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
-            border: `2px solid ${isDone ? "var(--ink)" : isActive ? "var(--rev)" : "var(--rule)"}`,
-            background: isDone ? "var(--ink)" : isActive ? "var(--rev)" : "transparent",
-            transition: "all 0.35s",
-            ...(isActive ? { boxShadow: "0 0 0 5px rgba(214,40,40,.13)" } : {}),
+            fontSize: 10, fontWeight: 700, letterSpacing: ".18em",
+            textTransform: "uppercase", color: g.color,
+            paddingBottom: 8, marginBottom: 10,
+            borderBottom: `2px solid ${g.color}`,
           }}>
-            {isDone && (
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ display: "block", margin: "1px" }}>
-                <polyline points="1,4 3,6 7,1.5" stroke="var(--paper)"
-                  strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
+            {g.label}
           </div>
+          {g.medios.map(m => (
+            <div key={m} style={{
+              fontSize: 12, color: "var(--ink-2)",
+              lineHeight: 1.9, fontWeight: 500,
+            }}>
+              {m}
+            </div>
+          ))}
         </div>
-
-        {/* Label */}
-        <h2 style={{
-          fontSize: "clamp(36px, 5vw, 58px)",
-          fontWeight: 900,
-          letterSpacing: "-.03em",
-          lineHeight: 1.0,
-          color: isPending ? "var(--ink-3)" : "var(--ink)",
-          transition: "color 0.35s",
-          marginBottom: 12,
-        }}>
-          {phase.label}
-        </h2>
-
-        {/* Sub */}
-        <div className="kicker" style={{ marginBottom: 40, fontWeight: 500 }}>
-          {phase.sub}
-        </div>
-
-        {/* Descripción */}
-        <p style={{
-          fontSize: 16,
-          lineHeight: 1.82,
-          color: isPending ? "var(--ink-3)" : "var(--ink-2)",
-          maxWidth: 740,
-          whiteSpace: "pre-line",
-          transition: "color 0.35s",
-          marginBottom: phase.algo ? 36 : 0,
-        }}>
-          {phase.desc}
-        </p>
-
-        {/* Bloque algoritmo */}
-        {phase.algo && (
-          <pre style={{
-            fontFamily: "'SF Mono', 'Fira Code', Consolas, monospace",
-            fontSize: 13,
-            lineHeight: 2,
-            color: isPending ? "var(--ink-3)" : "var(--ink-2)",
-            background: isActive ? "rgba(214,40,40,.03)" : "var(--paper-2)",
-            border: `1px solid ${isActive ? "rgba(214,40,40,.22)" : "var(--rule)"}`,
-            padding: "22px 30px",
-            whiteSpace: "pre",
-            overflowX: "auto",
-            maxWidth: 640,
-            transition: "all 0.35s",
-          }}>
-            {phase.algo}
-          </pre>
-        )}
-
-        {/* Métrica */}
-        {metric && (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 10,
-            marginTop: 32,
-            padding: "9px 18px",
-            background: isDone ? "var(--paper-2)" : "rgba(214,40,40,.05)",
-            border: `1px solid ${isDone ? "var(--rule)" : "rgba(214,40,40,.22)"}`,
-            fontSize: 12, fontWeight: 700, letterSpacing: ".06em",
-            color: isDone ? "var(--ink-2)" : "var(--rev)",
-            transition: "all 0.3s",
-          }}>
-            {isActive && (
-              <span style={{
-                width: 6, height: 6, borderRadius: "50%",
-                background: "var(--rev)",
-                animation: "kdd-pulse 1.2s ease-in-out infinite",
-              }} />
-            )}
-            {isDone ? "✓ " : ""}{metric}
-          </div>
-        )}
-
-        {/* Actividad actual */}
-        {isActive && activity && (
-          <div style={{
-            marginTop: 10,
-            fontSize: 11,
-            color: "var(--ink-3)",
-            fontFamily: "'SF Mono', 'Fira Code', monospace",
-            letterSpacing: ".02em",
-            maxWidth: 700,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}>
-            → {activity}
-          </div>
-        )}
-      </div>
-    </section>
+      ))}
+    </div>
   );
 }
 
 // ── Componente principal ──────────────────────────────────────────
+
 export default function Scraper() {
-  const [running, setRunning]           = useState(false);
-  const [started, setStarted]           = useState(false);
-  const [currentPhase, setCurrentPhase] = useState(-1);
-  const [phaseMetrics, setPhaseMetrics] = useState({});
+  const [running, setRunning]             = useState(false);
+  const [started, setStarted]             = useState(false);
+  const [currentPhase, setCurrentPhase]   = useState(-1);
+  const [phaseMetrics, setPhaseMetrics]   = useState({});
   const [phaseActivity, setPhaseActivity] = useState({});
-  const [isoWeek, setIsoWeek]           = useState(null);
-  const [summary, setSummary]           = useState(null);
-  const [error, setError]               = useState(null);
-  const [logs, setLogs]                 = useState([]);
+  const [isoWeek, setIsoWeek]             = useState(null);
+  const [summary, setSummary]             = useState(null);
+  const [error, setError]                 = useState(null);
+  const [logs, setLogs]                   = useState([]);
+  const [consoleVisible, setConsoleVisible] = useState(true);
   const phaseRef = useRef(-1);
 
   const handleRun = async () => {
@@ -500,6 +294,7 @@ export default function Scraper() {
     setSummary(null);
     setError(null);
     setLogs([]);
+    setConsoleVisible(true);
 
     try {
       const response = await runScraper();
@@ -525,27 +320,18 @@ export default function Scraper() {
 
             if (data.type === "log") {
               const msg = data.message || "";
-
-              setLogs(prev => {
-                const next = [...prev, cleanLog(msg)];
-                return next.length > 300 ? next.slice(-300) : next;
-              });
+              setLogs(prev => [...prev, msg]);
 
               const wm = msg.match(/Semana ISO\s*[:\s]+(\d{4}-W\d{2})/i);
               if (wm) setIsoWeek(wm[1]);
 
               const next = nextPhaseFrom(msg, phaseRef.current);
-              if (next !== null) {
-                phaseRef.current = next;
-                setCurrentPhase(next);
-              }
+              if (next !== null) { phaseRef.current = next; setCurrentPhase(next); }
 
               const metric = parseMetric(msg);
               if (metric) {
                 setPhaseMetrics(prev => ({ ...prev, [metric.phase]: metric.text }));
-                if (metric.activity) {
-                  setPhaseActivity(prev => ({ ...prev, [metric.phase]: metric.activity }));
-                }
+                if (metric.activity) setPhaseActivity(prev => ({ ...prev, [metric.phase]: metric.activity }));
               }
 
             } else if (data.type === "summary") {
@@ -555,7 +341,7 @@ export default function Scraper() {
             } else if (data.type === "done") {
               setRunning(false);
             }
-          } catch (_) { /* ignorar errores de parseo */ }
+          } catch (_) {}
         }
       }
       setRunning(false);
@@ -565,161 +351,477 @@ export default function Scraper() {
     }
   };
 
-  // Auto-scroll a la fase activa
-  useEffect(() => {
-    if (currentPhase >= 0 && currentPhase < PHASES.length) {
-      setTimeout(() => {
-        document.getElementById(`phase-${PHASES[currentPhase].id}`)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 120);
-    }
-  }, [currentPhase]);
-
   const stateOf = (i) => {
     if (currentPhase === -1) return "idle";
-    if (currentPhase > i)   return "complete";
-    if (currentPhase === i) return "active";
+    if (currentPhase > i)    return "complete";
+    if (currentPhase === i)  return "active";
     return "pending";
   };
 
   return (
     <div>
 
-      {/* ── HERO ─────────────────────────────────────────────── */}
-      <section style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        padding: "80px 64px",
-        borderBottom: "1px solid var(--rule)",
-      }}>
-        <div>
-          <div className="kicker" style={{ marginBottom: 22 }}>
-            UAZ · Ingeniería de Software · Tesis · KDD
-          </div>
+      {/* ════════════════════════════════════════════════════════
+          SECCIÓN 1 — El problema: el mismo hecho, 3 versiones
+          ════════════════════════════════════════════════════════ */}
+      <section style={{ padding: "72px 80px 64px", borderBottom: "1px solid var(--rule)" }}>
+        <div className="kicker" style={{ marginBottom: 18 }}>
+          UAZ · Ingeniería de Software · Tesis · KDD
+        </div>
 
-          <h1 style={{
-            fontSize: "clamp(52px, 7vw, 88px)",
-            fontWeight: 900,
-            lineHeight: 1.0,
-            letterSpacing: "-.035em",
-            color: "var(--ink)",
-            marginBottom: 26,
-          }}>
-            Pipeline{" "}
-            <em style={{ fontStyle: "italic", color: "var(--rev)" }}>KDD</em>
-          </h1>
+        <h1 style={{
+          fontSize: 52,
+          fontWeight: 900,
+          lineHeight: 1.05,
+          letterSpacing: "-.03em",
+          marginBottom: 20,
+          maxWidth: 620,
+        }}>
+          El mismo evento.{" "}
+          <em style={{ color: "var(--rev)", fontStyle: "italic" }}>Tres versiones.</em>
+        </h1>
 
-          <p style={{
-            fontSize: 17,
-            color: "var(--ink-2)",
-            maxWidth: 520,
-            lineHeight: 1.75,
-            marginBottom: 56,
-          }}>
-            Recolección, preprocesamiento y clustering semántico de cobertura
-            periodística de 8 medios mexicanos en tiempo real.
-          </p>
+        <p style={{ fontSize: 15, lineHeight: 1.7, color: "var(--ink-2)", maxWidth: 540, marginBottom: 48 }}>
+          Cuando el gobierno de EE.UU. acusó al gobernador de Sinaloa Rubén Rocha Moya
+          de vínculos con el crimen organizado, cada periódico lo contó diferente.
+        </p>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
-            <button
-              onClick={handleRun}
-              disabled={running}
-              style={{
-                padding: "15px 36px",
-                background: running ? "transparent" : "var(--ink)",
-                color: running ? "var(--ink-3)" : "var(--paper)",
-                border: `1.5px solid ${running ? "var(--rule)" : "var(--ink)"}`,
-                fontWeight: 700,
-                fontSize: 12,
-                letterSpacing: ".14em",
-                textTransform: "uppercase",
-                cursor: running ? "wait" : "pointer",
-                transition: "background .15s, color .15s, border-color .15s",
-              }}
-            >
-              {running ? "Ejecutando…" : started ? "Ejecutar de nuevo" : "Iniciar pipeline"}
-            </button>
-
-            {isoWeek && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: "50%",
-                  background: "var(--rev)",
-                  display: "inline-block",
-                  ...(running ? { animation: "kdd-pulse 1.4s ease-in-out infinite" } : {}),
-                }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)", letterSpacing: ".04em" }}>
-                  Semana {isoWeek}
+        {/* Las tres portadas */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0, marginBottom: 36, maxWidth: 780 }}>
+          {[
+            { medio: "La Jornada", color: "var(--rev)", orientacion: "Izquierda",
+              titular: '"En un momento de tensión injustificada con Washington…"',
+              capa: "tensión injustificada" },
+            { medio: "El Financiero", color: "var(--ochre)", orientacion: "Crítico",
+              titular: '"La acusación pone en aprietos a Sheinbaum"',
+              capa: "en aprietos" },
+            { medio: "Animal Político", color: "var(--graphite)", orientacion: "Centro",
+              titular: '"La sombra del Cártel de Sinaloa alcanza a Morena"',
+              capa: "sombra del cártel" },
+          ].map((item, i) => (
+            <div key={i} style={{
+              borderLeft: `3px solid ${item.color}`,
+              borderRight: i < 2 ? "1px solid var(--rule)" : "none",
+              padding: "18px 22px",
+              background: "var(--paper-2)",
+            }}>
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: ".18em",
+                textTransform: "uppercase", color: item.color, marginBottom: 6,
+              }}>
+                {item.medio}
+                <span style={{ color: "var(--ink-3)", fontWeight: 500, marginLeft: 8 }}>
+                  · {item.orientacion}
                 </span>
               </div>
-            )}
+              <div style={{
+                fontSize: 13, lineHeight: 1.6, color: "var(--ink)",
+                fontWeight: 500, marginBottom: 14, fontStyle: "italic",
+              }}>
+                {item.titular}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--ink-3)", borderTop: "1px solid var(--rule)", paddingTop: 10 }}>
+                Capa ideológica:{" "}
+                <span style={{ color: item.color, fontWeight: 700 }}>"{item.capa}"</span>
+              </div>
+            </div>
+          ))}
+        </div>
 
-            {error && (
-              <span style={{ fontSize: 13, color: "var(--rev)" }}>
-                Error: {error}
-              </span>
-            )}
-          </div>
-
-          {/* Scroll indicator */}
-          <div style={{
-            marginTop: 88,
-            display: "flex", alignItems: "center", gap: 16,
-            color: "var(--ink-3)", fontSize: 11,
-            letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 600,
-          }}>
-            <span style={{ display: "block", width: 1, height: 36, background: "var(--rule)" }} />
-            Scroll para explorar el pipeline
-          </div>
+        {/* El hecho material */}
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 16,
+          padding: "20px 24px",
+          background: "var(--ink)", color: "var(--paper)",
+          maxWidth: 680,
+        }}>
+          <div style={{ width: 3, minHeight: 44, background: "var(--rev)", flexShrink: 0, marginTop: 2 }} />
+          <p style={{ fontSize: 14, lineHeight: 1.7 }}>
+            <strong>El hecho material es uno:</strong> hubo una acusación formal.{" "}
+            Todo lo demás —<em style={{ color: "rgba(244,239,229,.6)" }}>"tensión injustificada"</em>,{" "}
+            <em style={{ color: "rgba(244,239,229,.6)" }}>"en aprietos"</em>,{" "}
+            <em style={{ color: "rgba(244,239,229,.6)" }}>"sombra del cártel"</em>—{" "}
+            son capas ideológicas que cada medio agrega según su posición política.
+          </p>
         </div>
       </section>
 
-      {/* ── FASES ────────────────────────────────────────────── */}
-      {PHASES.map((phase, i) => (
-        <PhaseSection
-          key={phase.id}
-          phase={phase}
-          i={i}
-          state={stateOf(i)}
-          metric={phaseMetrics[i]}
-          activity={phaseActivity[i]}
-        />
-      ))}
+      {/* ════════════════════════════════════════════════════════
+          SECCIÓN 2 — La contribución original + estado KDD
+          ════════════════════════════════════════════════════════ */}
+      <section style={{
+        padding: "56px 80px",
+        borderBottom: "1px solid var(--rule)",
+        display: "grid",
+        gridTemplateColumns: "1.1fr 1fr",
+        gap: 72,
+        alignItems: "flex-start",
+      }}>
+        <div>
+          <div className="kicker" style={{ marginBottom: 16 }}>La contribución original</div>
+          <h2 style={{
+            fontSize: 28, fontWeight: 800, letterSpacing: "-.02em",
+            lineHeight: 1.2, marginBottom: 18,
+          }}>
+            Todos los sistemas{" "}
+            <span style={{ color: "var(--rev)" }}>detectan</span> sesgo.
+            <br />
+            Ninguno puede{" "}
+            <span style={{ color: "var(--rev)" }}>separarlo</span>.
+          </h2>
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: "var(--ink-2)", maxWidth: 440 }}>
+            El estado del arte puede decir "este artículo tiene sesgo político".
+            Lo que no puede hacer es responder: ¿cuál es el hecho factual de base
+            y qué fue añadido por el periodista?
+          </p>
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: "var(--ink-2)", maxWidth: 440, marginTop: 12 }}>
+            Esa separación — hecho material vs. capa ideológica — es exactamente
+            lo que construye esta metodología KDD sobre 8 medios del espectro mexicano.
+          </p>
+        </div>
 
-      {/* ── RESUMEN FINAL ─────────────────────────────────────── */}
-      {summary && (
-        <section style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          padding: "80px 64px",
+        {/* Estado de las 6 fases KDD */}
+        <div style={{ borderLeft: "1px solid var(--rule)", paddingLeft: 64 }}>
+          <div className="kicker" style={{ marginBottom: 16 }}>Estado del pipeline KDD</div>
+          {[
+            { num: "01", label: "Selección de datos",  done: true  },
+            { num: "02", label: "Preprocesamiento",    done: true  },
+            { num: "03", label: "Transformación",      done: true  },
+            { num: "04", label: "Anotación",           done: false, next: true },
+            { num: "05", label: "Minería",             done: false },
+            { num: "06", label: "Interpretación",      done: false },
+          ].map((p) => (
+            <div key={p.num} style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "10px 0", borderBottom: "1px solid var(--rule)",
+              opacity: p.done || p.next ? 1 : 0.38,
+            }}>
+              <span style={{
+                width: 20, height: 20, borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: p.done ? "var(--ink)" : "transparent",
+                border: `1.5px solid ${p.done ? "var(--ink)" : p.next ? "var(--rev)" : "var(--rule)"}`,
+                flexShrink: 0, fontSize: 9, color: "var(--paper)", fontWeight: 700,
+              }}>
+                {p.done ? "✓" : ""}
+              </span>
+              <span style={{
+                fontSize: 13, flex: 1,
+                fontWeight: p.done || p.next ? 600 : 400,
+                color: p.done ? "var(--ink)" : p.next ? "var(--rev)" : "var(--ink-3)",
+              }}>
+                {p.num} — {p.label}
+              </span>
+              {p.next && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: ".14em",
+                  textTransform: "uppercase", color: "var(--rev)",
+                }}>
+                  Siguiente
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════
+          SECCIÓN 3 — Pipeline: botón + timeline + consola
+          ════════════════════════════════════════════════════════ */}
+      <div style={{ maxWidth: 840, margin: "0 auto", padding: "72px 40px 120px" }}>
+
+        {/* Botón + indicador de semana */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 28,
+          marginBottom: 72, paddingBottom: 40,
+          borderBottom: "2px solid var(--ink)",
+          flexWrap: "wrap",
         }}>
-          <div>
-            <div className="kicker" style={{ marginBottom: 40 }}>
+          <button
+            onClick={handleRun}
+            disabled={running}
+            style={{
+              padding: "14px 34px",
+              background: running ? "transparent" : "var(--ink)",
+              color: running ? "var(--ink-3)" : "var(--paper)",
+              border: `1.5px solid ${running ? "var(--rule)" : "var(--ink)"}`,
+              fontWeight: 700, fontSize: 12,
+              letterSpacing: ".12em", textTransform: "uppercase",
+              cursor: running ? "wait" : "pointer",
+              fontFamily: "inherit",
+              transition: "all .15s",
+            }}
+          >
+            {running ? "Ejecutando…" : started ? "Ejecutar de nuevo" : "Iniciar pipeline"}
+          </button>
+
+          {isoWeek && (
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%", background: "var(--rev)",
+                ...(running ? { animation: "kdd-pulse 1.4s ease-in-out infinite" } : {}),
+              }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)", letterSpacing: ".04em" }}>
+                Semana {isoWeek}
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <span style={{ fontSize: 13, color: "var(--rev)" }}>Error: {error}</span>
+          )}
+        </div>
+
+        {/* ── TIMELINE ──────────────────────────────────── */}
+        <div>
+          {PHASES.map((phase, i) => {
+            const state    = stateOf(i);
+            const isActive  = state === "active";
+            const isDone    = state === "complete";
+            const isPending = state === "pending";
+            const isIdle    = state === "idle";
+            const dimmed    = isPending;
+            const metric    = phaseMetrics[i];
+            const activity  = phaseActivity[i];
+
+            return (
+              <div key={phase.id} style={{ display: "flex", gap: 0 }}>
+
+                {/* Dot + línea vertical */}
+                <div style={{
+                  display: "flex", flexDirection: "column", alignItems: "center",
+                  width: 52, flexShrink: 0, paddingTop: 3,
+                }}>
+                  <div style={{
+                    width: 18, height: 18, borderRadius: "50%",
+                    flexShrink: 0, zIndex: 1,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    border: `2px solid ${isDone ? "var(--ink)" : isActive ? "var(--rev)" : "var(--rule)"}`,
+                    background: isDone ? "var(--ink)" : isActive ? "var(--rev)" : "transparent",
+                    transition: "all .35s ease",
+                    ...(isActive ? { boxShadow: "0 0 0 6px rgba(214,40,40,.1)" } : {}),
+                  }}>
+                    {isDone && (
+                      <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
+                        <polyline points="1.5,4.5 3.5,6.5 7.5,2"
+                          stroke="var(--paper)" strokeWidth="1.5"
+                          strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  {i < PHASES.length - 1 && (
+                    <div style={{
+                      width: 1, flexGrow: 1, minHeight: 32,
+                      background: isDone ? "var(--ink-2)" : "var(--rule)",
+                      marginTop: 5, marginBottom: 5,
+                      transition: "background .35s ease",
+                    }} />
+                  )}
+                </div>
+
+                {/* Contenido de la fase */}
+                <div style={{
+                  flex: 1, paddingLeft: 28,
+                  paddingBottom: i < PHASES.length - 1 ? 60 : 0,
+                  borderLeft: `2px solid ${isActive ? "var(--rev)" : "transparent"}`,
+                  marginLeft: -1,
+                  transition: "border-color .3s ease",
+                }}>
+
+                  {/* Cabecera */}
+                  <div style={{
+                    display: "flex", alignItems: "baseline", gap: 12,
+                    marginBottom: 16, flexWrap: "wrap",
+                  }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, letterSpacing: ".22em",
+                      fontVariantNumeric: "tabular-nums",
+                      color: isDone ? "var(--ink-3)" : isActive ? "var(--rev)" : "var(--rule)",
+                      transition: "color .35s",
+                    }}>
+                      {phase.num}
+                    </span>
+                    <h2 style={{
+                      fontSize: 21, fontWeight: 800, letterSpacing: "-.015em",
+                      color: dimmed ? "var(--ink-3)" : "var(--ink)",
+                      transition: "color .35s",
+                    }}>
+                      {phase.label}
+                    </h2>
+                    <span className="kicker" style={{ fontWeight: 500, letterSpacing: ".1em" }}>
+                      {phase.sub}
+                    </span>
+                  </div>
+
+                  {/* Descripción base — siempre visible */}
+                  <p style={{
+                    fontSize: 14, lineHeight: 1.78,
+                    color: dimmed ? "var(--ink-3)" : "var(--ink-2)",
+                    maxWidth: 630, whiteSpace: "pre-line",
+                    transition: "color .35s",
+                    marginBottom: 0,
+                  }}>
+                    {phase.desc}
+                  </p>
+
+                  {/* Grid de 8 medios — Fase 01 siempre */}
+                  {phase.showMedios && (
+                    <div style={{
+                      animation: isActive ? "fadeInUp .45s ease both" : "none",
+                    }}>
+                      <MediaGrid />
+                    </div>
+                  )}
+
+                  {/* Bloque de algoritmo — siempre visible si existe */}
+                  {phase.algo && (
+                    <pre style={{
+                      fontFamily: "'SF Mono','Fira Code','Consolas',monospace",
+                      fontSize: 12, lineHeight: 1.85,
+                      color: dimmed ? "var(--ink-3)" : "var(--ink-2)",
+                      background: isActive ? "rgba(214,40,40,.03)" : "var(--paper-2)",
+                      border: `1px solid ${isActive ? "rgba(214,40,40,.2)" : "var(--rule)"}`,
+                      padding: "16px 22px",
+                      whiteSpace: "pre",
+                      overflowX: "auto",
+                      maxWidth: 580,
+                      marginTop: 22,
+                      transition: "all .35s",
+                      animation: isActive ? "fadeInUp .45s .1s ease both" : "none",
+                    }}>
+                      {phase.algo}
+                    </pre>
+                  )}
+
+                  {/* Detalle expandido — aparece al activarse */}
+                  {(isActive || isDone) && phase.detail && (
+                    <p
+                      key={`detail-${state}`}
+                      style={{
+                        fontSize: 13, lineHeight: 1.8, color: "var(--ink-3)",
+                        maxWidth: 620, marginTop: 18,
+                        whiteSpace: "pre-line",
+                        borderLeft: "2px solid var(--rule)",
+                        paddingLeft: 16,
+                        animation: "fadeInUp .4s .05s ease both",
+                      }}
+                    >
+                      {phase.detail}
+                    </p>
+                  )}
+
+                  {/* Alternativas descartadas — Fase 03, solo cuando activa o completa */}
+                  {phase.rejected && (isActive || isDone) && (
+                    <div style={{ marginTop: 22, animation: "fadeInUp .45s .15s ease both" }}>
+                      <div className="kicker" style={{ marginBottom: 12 }}>
+                        Alternativas evaluadas y descartadas
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {phase.rejected.map((r, ri) => (
+                          <div key={ri} style={{
+                            padding: "14px 18px",
+                            border: "1px solid var(--rule)",
+                            borderLeft: "3px solid var(--rule)",
+                            animation: `fadeInUp .4s ${.2 + ri * .1}s ease both`,
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+                                textTransform: "uppercase", color: "var(--ink-3)",
+                                background: "var(--paper-2)", border: "1px solid var(--rule)",
+                                padding: "2px 8px",
+                              }}>
+                                ✗ Descartado
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>
+                                {r.name}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: 12, lineHeight: 1.7, color: "var(--ink-3)", maxWidth: 560 }}>
+                              {r.reason}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Métrica en tiempo real */}
+                  {metric && (
+                    <div
+                      key={`metric-${metric}`}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 8,
+                        marginTop: 18, padding: "6px 14px",
+                        background: isDone ? "var(--paper-2)" : "rgba(214,40,40,.05)",
+                        border: `1px solid ${isDone ? "var(--rule)" : "rgba(214,40,40,.2)"}`,
+                        fontSize: 12, fontWeight: 600, letterSpacing: ".04em",
+                        color: isDone ? "var(--ink-2)" : "var(--rev)",
+                        transition: "all .3s",
+                        animation: "fadeIn .3s ease",
+                      }}
+                    >
+                      {isActive && (
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: "var(--rev)", flexShrink: 0,
+                          animation: "kdd-pulse 1.2s ease-in-out infinite",
+                        }} />
+                      )}
+                      {isDone ? "✓ " : ""}
+                      {metric}
+                    </div>
+                  )}
+
+                  {/* Línea de actividad en tiempo real (artículo procesándose) */}
+                  {isActive && activity && (
+                    <div style={{
+                      marginTop: 8, fontSize: 11, color: "var(--ink-3)",
+                      fontFamily: "'SF Mono','Fira Code',monospace",
+                      letterSpacing: ".02em", maxWidth: 620,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      animation: "fadeIn .2s ease",
+                    }}>
+                      → {activity}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── RESUMEN FINAL ─────────────────────────────── */}
+        {summary && (
+          <div style={{
+            marginTop: 72, paddingTop: 48,
+            borderTop: "2px solid var(--ink)",
+            animation: "fadeInUp .5s ease both",
+          }}>
+            <div className="kicker" style={{ marginBottom: 36 }}>
               Resultado · Pipeline KDD completado
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", maxWidth: 760 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
               {[
                 { label: "Eventos detectados", value: summary.eventos_detectados, color: "var(--rev)" },
                 { label: "Artículos guardados", value: summary.articulos_guardados, color: "var(--ink)" },
-                { label: "Duración total",      value: summary.duracion,            color: "var(--graphite)", mono: true },
-              ].map((stat, idx) => (
-                <div key={idx} style={{
+                { label: "Duración total", value: summary.duracion, color: "var(--graphite)", mono: true },
+              ].map((stat, i) => (
+                <div key={i} style={{
                   padding: "8px 32px 8px 0",
-                  borderRight: idx < 2 ? "1px solid var(--rule)" : "none",
-                  marginRight: idx < 2 ? 32 : 0,
+                  borderRight: i < 2 ? "1px solid var(--rule)" : "none",
+                  marginRight: i < 2 ? 32 : 0,
                 }}>
-                  <div className="kicker" style={{ marginBottom: 14 }}>{stat.label}</div>
+                  <div className="kicker" style={{ marginBottom: 10 }}>{stat.label}</div>
                   <div style={{
-                    fontSize: stat.mono ? 32 : 68,
+                    fontSize: stat.mono ? 28 : 46,
                     fontWeight: 900,
                     color: stat.color,
                     lineHeight: 1,
                     letterSpacing: stat.mono ? ".04em" : "-.025em",
                     fontVariantNumeric: "tabular-nums",
-                    fontFamily: stat.mono ? "'SF Mono', monospace" : "inherit",
+                    fontFamily: stat.mono ? "'SF Mono',monospace" : "inherit",
+                    animation: "fadeInUp .4s ease both",
                   }}>
                     {stat.value}
                   </div>
@@ -729,22 +831,24 @@ export default function Scraper() {
 
             {summary.articulos_fallidos > 0 && (
               <div style={{
-                marginTop: 36,
-                padding: "14px 20px",
-                background: "var(--paper-2)",
-                border: "1px solid var(--rule)",
+                marginTop: 24, padding: "12px 16px",
+                background: "var(--paper-2)", border: "1px solid var(--rule)",
                 fontSize: 13, color: "var(--ink-3)",
-                maxWidth: 500,
               }}>
                 {summary.articulos_fallidos} artículos no pudieron extraerse — sin impacto en los eventos detectados.
               </div>
             )}
           </div>
-        </section>
-      )}
+        )}
+      </div>
 
-      {/* ── PANEL DE CONSOLA ──────────────────────────────────── */}
-      <ConsolePanel logs={logs} running={running} visible={started} currentPhase={currentPhase} />
+      {/* ── CONSOLA FLOTANTE ──────────────────────────── */}
+      <Console
+        logs={logs}
+        running={running}
+        visible={consoleVisible}
+        onToggle={() => setConsoleVisible(v => !v)}
+      />
     </div>
   );
 }
