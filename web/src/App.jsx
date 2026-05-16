@@ -2,8 +2,9 @@ import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Eventos from "./pages/Eventos";
 import EventoDetalle from "./pages/EventoDetalle";
+import Anotacion from "./pages/Anotacion";
 import Scraper from "./pages/Scraper";
-import HammerSickle from "./components/HammerSickle";
+import hasPng from "./components/has.png";
 import "./index.css";
 
 export default function App() {
@@ -28,8 +29,11 @@ export default function App() {
               <NavLink to="/scraper" className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
                 Scraper
               </NavLink>
+              <NavLink to="/anotacion" className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
+                Anotación
+              </NavLink>
             </div>
-            <HammerSickle size={26} />
+            <img src={hasPng} alt="" aria-hidden style={{ height: 26, width: "auto", display: "block" }} />
           </div>
         </nav>
 
@@ -39,6 +43,7 @@ export default function App() {
             <Route path="/eventos"     element={<Eventos />} />
             <Route path="/eventos/:id" element={<EventoDetalle />} />
             <Route path="/scraper"     element={<Scraper />} />
+            <Route path="/anotacion"   element={<Anotacion />} />
           </Routes>
         </main>
 

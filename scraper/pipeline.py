@@ -28,6 +28,7 @@ from db import (
     actualizar_num_fuentes,
 )
 from clustering import detectar_eventos, get_semana_iso
+from annotator import segmentar_articulos_nuevos
 
 # ── Logging ───────────────────────────────────────────────────
 # Todo lo que pase por logging.info() — incluyendo clustering.py
@@ -154,6 +155,20 @@ def ejecutar():
         if guardados_evento == 0 and evento_nuevo:
             eliminar_evento(evento_id)
             log.info(f"  [Evento] Todos los articulos eran duplicados. Evento eliminado.")
+
+    # ── Paso 4: Segmentación para Fase 4 ─────────────────────
+    # Segmentar automáticamente los artículos nuevos en oraciones
+    # con spaCy para que estén listos cuando se inicie la anotación.
+    # Solo procesa artículos que aún no tienen oraciones en la BD.
+    if total_guardados > 0:
+        log.info(f"\n[4/4] Segmentando artículos nuevos para Fase 4 (anotación)...")
+        try:
+            seg = segmentar_articulos_nuevos()
+            log.info(f"      {seg['articulos_procesados']} artículos → {seg['oraciones_creadas']} oraciones nuevas")
+        except Exception as e:
+            log.warning(f"      Segmentación falló: {e} — ejecuta annotator.py --segmentar manualmente")
+    else:
+        log.info(f"\n[4/4] Sin artículos nuevos — segmentación omitida.")
 
     # ── Resumen ───────────────────────────────────────────────
     duracion = datetime.now() - inicio

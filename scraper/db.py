@@ -2,6 +2,8 @@
 # db.py — Conexión y operaciones con PostgreSQL
 # Toda interacción con la base de datos pasa por este archivo.
 # Schema: fuentes → eventos → articulos → articulo_keywords
+#         → oraciones → anotaciones ← anotadores
+#         → sesiones_kappa
 # =============================================================
 
 import os
@@ -27,15 +29,18 @@ def get_connection():
 
 def crear_tablas():
     """
-    Crea las 4 tablas si no existen.
+    Crea las 8 tablas si no existen.
     Seguro de ejecutar múltiples veces — no borra datos existentes.
 
-    Esquema:
-    fuentes           → medios de comunicación con orientación ideológica
-    eventos           → clusters de artículos sobre el mismo hecho real
-                        ventana_inicio/fin definen el rango temporal del evento
-    articulos         → cobertura específica de un evento por una fuente
-    articulo_keywords → keywords TF-IDF por artículo (una fila por keyword)
+    Esquema KDD completo:
+    fuentes           → medios con orientación ideológica
+    eventos           → clusters detectados con ventana ISO
+    articulos         → cobertura de un evento por una fuente
+    articulo_keywords → keywords TF-IDF por artículo
+    oraciones         → oraciones segmentadas por spaCy (Fase 4)
+    anotadores        → personas que anotan (Fase 4)
+    anotaciones       → etiquetas A/B/C por oración por anotador
+    sesiones_kappa    → resultados de acuerdo inter-anotador
     """
     sql = """
         CREATE TABLE IF NOT EXISTS fuentes (
@@ -64,6 +69,7 @@ def crear_tablas():
             autor        TEXT,
             fecha_pub    TIMESTAMP,
             metodo       TEXT,
+            anotado      BOOLEAN DEFAULT FALSE,
             scrapeado_en TIMESTAMP DEFAULT NOW()
         );
 
@@ -75,9 +81,68 @@ def crear_tablas():
 
         CREATE INDEX IF NOT EXISTS idx_keyword
             ON articulo_keywords(keyword);
-
         CREATE INDEX IF NOT EXISTS idx_articulo_kw
             ON articulo_keywords(articulo_id);
+
+        -- ── FASE 4: Anotación A/B/C ──────────────────────────
+
+        CREATE TABLE IF NOT EXISTS oraciones (
+            id            SERIAL PRIMARY KEY,
+            articulo_id   INT REFERENCES articulos(id) ON DELETE CASCADE,
+            texto         TEXT NOT NULL,
+            contexto_prev TEXT,
+            contexto_sig  TEXT,
+            posicion      INT NOT NULL,
+            num_palabras  INT,
+            creado_en     TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_oraciones_articulo
+            ON oraciones(articulo_id);
+
+        CREATE TABLE IF NOT EXISTS anotadores (
+            id          SERIAL PRIMARY KEY,
+            nombre      TEXT NOT NULL UNIQUE,
+            descripcion TEXT,
+            creado_en   TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS anotaciones (
+            id             SERIAL PRIMARY KEY,
+            oracion_id     INT REFERENCES oraciones(id) ON DELETE CASCADE,
+            anotador_id    INT REFERENCES anotadores(id),
+            version        INT NOT NULL DEFAULT 1,
+            categoria      CHAR(1) NOT NULL CHECK (categoria IN ('A','B','C')),
+            elemento_sesgo TEXT,
+            alternativa    TEXT,
+            confianza      TEXT CHECK (confianza IN ('alta','media','baja')),
+            es_consenso    BOOLEAN DEFAULT FALSE,
+            notas          TEXT,
+            creado_en      TIMESTAMP DEFAULT NOW(),
+            UNIQUE(oracion_id, anotador_id, version)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_anotaciones_oracion
+            ON anotaciones(oracion_id);
+        CREATE INDEX IF NOT EXISTS idx_anotaciones_anotador
+            ON anotaciones(anotador_id);
+        CREATE INDEX IF NOT EXISTS idx_anotaciones_categoria
+            ON anotaciones(categoria);
+
+        CREATE TABLE IF NOT EXISTS sesiones_kappa (
+            id              SERIAL PRIMARY KEY,
+            anotador1_id    INT REFERENCES anotadores(id),
+            anotador2_id    INT REFERENCES anotadores(id),
+            kappa_global    DECIMAL(4,3),
+            kappa_A         DECIMAL(4,3),
+            kappa_B         DECIMAL(4,3),
+            kappa_C         DECIMAL(4,3),
+            total_oraciones INT,
+            acuerdo_pct     DECIMAL(5,2),
+            valido          BOOLEAN,
+            notas           TEXT,
+            calculado_en    TIMESTAMP DEFAULT NOW()
+        );
     """
     conn = get_connection()
     cur  = conn.cursor()

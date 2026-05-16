@@ -15,6 +15,7 @@ app.use(express.json());
 app.use("/api/stats",     require("./routes/stats"));
 app.use("/api/eventos",   require("./routes/eventos"));
 app.use("/api/articulos", require("./routes/articulos"));
+app.use("/api/anotacion", require("./routes/anotacion"));
 app.use("/api/scraper",   require("./routes/scraper"));
 
 // Health check
