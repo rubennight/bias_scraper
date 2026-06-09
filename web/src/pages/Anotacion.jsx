@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   getAnotadores, crearAnotador,
   getOracionesPendientes, guardarAnotacion,
-  getStatsAnotador, calcularKappa,
+  getStatsAnotador, marcarCompleja,
 } from "../api";
 
 // ── Instrucciones de la taxonomía ────────────────────────────
@@ -46,6 +46,15 @@ const INSTRUCCIONES = [
       '"El régimen de Sheinbaum responde." → neutro: el gobierno',
     ],
   },
+];
+
+// Subtipos de sesgo
+const SUBTIPOS = [
+  { value: "lexical",    label: "Léxico",      desc: "Palabra con carga ideológica (vándalos, trumpista)" },
+  { value: "metafora",   label: "Metáfora",    desc: "Imagen figurada valorativa (estrangular, capitular)" },
+  { value: "epistemico", label: "Epistémico",  desc: "Intención presentada como hecho verificable" },
+  { value: "omision",    label: "Omisión",     desc: "Dato relevante ausente que cambia el sentido" },
+  { value: "encuadre",   label: "Encuadre",    desc: "Estructura narrativa que implica causalidad" },
 ];
 
 // ── Colores por categoría ─────────────────────────────────────
@@ -241,8 +250,7 @@ function InterfazAnotacion({ anotador }) {
   const [oraciones, setOraciones]     = useState([]);
   const [idx, setIdx]                 = useState(0);
   const [categoria, setCategoria]     = useState(null);
-  const [elemento, setElemento]       = useState("");
-  const [alternativa, setAlternativa] = useState("");
+  const [elementos, setElementos]     = useState([]); // [{elemento, alternativa, tipo}]
   const [confianza, setConfianza]     = useState("alta");
   const [notas, setNotas]             = useState("");
   const [guardando, setGuardando]     = useState(false);
@@ -265,8 +273,7 @@ function InterfazAnotacion({ anotador }) {
 
   const resetForm = () => {
     setCategoria(null);
-    setElemento("");
-    setAlternativa("");
+    setElementos([]);
     setConfianza("alta");
     setNotas("");
   };
@@ -277,23 +284,19 @@ function InterfazAnotacion({ anotador }) {
     setGuardando(true);
     try {
       await guardarAnotacion({
-        oracion_id:    oracion.id,
-        anotador_id:   anotador.id,
+        oracion_id:  oracion.id,
+        anotador_id: anotador.id,
         categoria,
-        elemento_sesgo: elemento || null,
-        alternativa:   alternativa || null,
+        elementos:   elementos.filter(e => e.elemento.trim()),
         confianza,
-        notas:         notas || null,
+        notas: notas || null,
       });
       setGuardadas(g => g + 1);
-      // Verificar si completó piloto
       if (guardadas + 1 >= 50) setPilotoCompletado(true);
-      // Siguiente oración
       if (idx + 1 < oraciones.length) {
         setIdx(i => i + 1);
         resetForm();
       } else {
-        // Cargar más oraciones
         const r = await getOracionesPendientes({ anotador_id: anotador.id, limite: 100 });
         setOraciones(r.data);
         setIdx(0);
@@ -305,7 +308,7 @@ function InterfazAnotacion({ anotador }) {
     } finally {
       setGuardando(false);
     }
-  }, [categoria, oraciones, idx, anotador.id, elemento, alternativa, confianza, notas, guardadas]);
+  }, [categoria, oraciones, idx, anotador.id, elementos, confianza, notas, guardadas]);
 
   // Atajo de teclado: A, B, C para categoría — Enter para guardar
   useEffect(() => {
@@ -480,42 +483,110 @@ function InterfazAnotacion({ anotador }) {
       {/* Campos adicionales para B y C */}
       {(categoria === "B" || categoria === "C") && (
         <div style={{ background: CAT_BG[categoria], border: `1px solid ${CAT_COLOR[categoria]}40`, borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <div>
-              <label style={{ fontSize: 11, color: "#666", display: "block", marginBottom: 4 }}>
-                {categoria === "B" ? "Palabra/frase evaluativa *" : "Palabra con sesgo *"}
-              </label>
-              <input
-                value={elemento}
-                onChange={e => setElemento(e.target.value)}
-                placeholder={categoria === "B" ? "ej: polémico, oscuro" : "ej: vándalos, régimen"}
-                style={{ width: "100%", padding: "7px 10px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 13 }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: "#666", display: "block", marginBottom: 4 }}>Alternativa neutral *</label>
-              <input
-                value={alternativa}
-                onChange={e => setAlternativa(e.target.value)}
-                placeholder={categoria === "B" ? "ej: (quitar)" : "ej: manifestantes, gobierno"}
-                style={{ width: "100%", padding: "7px 10px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 13 }}
-              />
-            </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: CAT_COLOR[categoria], textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+            Elementos de sesgo detectados
           </div>
-          <div>
-            <label style={{ fontSize: 11, color: "#666", display: "block", marginBottom: 4 }}>Notas (opcional)</label>
+
+          {/* Cabecera de columnas */}
+          {elementos.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px 130px 28px", gap: 6, marginBottom: 4 }}>
+              {["Elemento con sesgo", "Alternativa neutral", "Tipo", "Mecanismo", ""].map((h, i) => (
+                <div key={i} style={{ fontSize: 10, color: "#999", textTransform: "uppercase", letterSpacing: ".04em" }}>{h}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Filas de elementos */}
+          {elementos.map((el, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 110px 130px 28px", gap: 6, marginBottom: 7, alignItems: "center" }}>
+              <input
+                value={el.elemento}
+                onChange={e => {
+                  const copia = [...elementos];
+                  copia[i].elemento = e.target.value;
+                  setElementos(copia);
+                }}
+                placeholder="ej: estrangular, vándalos"
+                style={{ padding: "6px 8px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 12 }}
+              />
+              <input
+                value={el.alternativa}
+                onChange={e => {
+                  const copia = [...elementos];
+                  copia[i].alternativa = e.target.value;
+                  setElementos(copia);
+                }}
+                placeholder="ej: presionar, manifestantes"
+                style={{ padding: "6px 8px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 12 }}
+              />
+              {/* Tipo B o C */}
+              <select
+                value={el.tipo}
+                onChange={e => {
+                  const copia = [...elementos];
+                  copia[i].tipo = e.target.value;
+                  setElementos(copia);
+                }}
+                style={{ padding: "6px 6px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 12 }}
+              >
+                <option value="B">B — Eval.</option>
+                <option value="C">C — Marco</option>
+              </select>
+              {/* Subtipo / mecanismo */}
+              <select
+                value={el.subtipo || ""}
+                onChange={e => {
+                  const copia = [...elementos];
+                  copia[i].subtipo = e.target.value;
+                  setElementos(copia);
+                }}
+                style={{ padding: "6px 6px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 12 }}
+              >
+                <option value="">— mecanismo</option>
+                {SUBTIPOS.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setElementos(elementos.filter((_, j) => j !== i))}
+                style={{ background: "transparent", border: "1px solid #ddd", borderRadius: 5, padding: "4px 6px", cursor: "pointer", color: "#bbb", fontSize: 13 }}
+              >✕</button>
+            </div>
+          ))}
+
+          {/* Tooltip de subtipos */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, marginTop: 2 }}>
+            {SUBTIPOS.map(s => (
+              <span key={s.value} style={{ fontSize: 10, color: "#999", background: "#f0ede8", borderRadius: 3, padding: "1px 6px" }}
+                title={s.desc}>
+                {s.label}: {s.desc}
+              </span>
+            ))}
+          </div>
+
+          {/* Botón agregar elemento */}
+          <button
+            onClick={() => setElementos([...elementos, { elemento: "", alternativa: "", tipo: categoria, subtipo: "" }])}
+            style={{ background: "transparent", border: `1px dashed ${CAT_COLOR[categoria]}`, borderRadius: 5, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: CAT_COLOR[categoria], fontFamily: "inherit" }}
+          >
+            + Agregar elemento
+          </button>
+
+          {/* Notas */}
+          <div style={{ marginTop: 10 }}>
             <input
               value={notas}
               onChange={e => setNotas(e.target.value)}
-              placeholder="Justificación o duda..."
-              style={{ width: "100%", padding: "7px 10px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 13 }}
+              placeholder="Notas o justificación (opcional)"
+              style={{ width: "100%", padding: "7px 10px", border: "1px solid #ddd", borderRadius: 5, fontFamily: "inherit", fontSize: 12 }}
             />
           </div>
         </div>
       )}
 
-      {/* Confianza + Guardar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      {/* Confianza + Guardar + Compleja */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 6, flex: 1, alignItems: "center" }}>
           {["alta", "media", "baja"].map(c => {
             const info = CONFIANZA_INFO[c];
@@ -587,6 +658,33 @@ function InterfazAnotacion({ anotador }) {
           }}
         >
           {guardando ? "..." : "Guardar →"}
+        </button>
+
+        {/* Botón oración compleja */}
+        <button
+          onClick={async () => {
+            const oracion = oraciones[idx];
+            try {
+              await marcarCompleja(oracion.id);
+              if (idx + 1 < oraciones.length) {
+                setIdx(i => i + 1);
+                resetForm();
+              } else {
+                const r = await getOracionesPendientes({ anotador_id: anotador.id, limite: 100 });
+                setOraciones(r.data);
+                setIdx(0);
+                resetForm();
+              }
+            } catch (e) { console.error(e); }
+          }}
+          title="Marcar como demasiado compleja y pasar a la siguiente"
+          style={{
+            background: "transparent", border: "1px solid #ddd",
+            borderRadius: 8, padding: "10px 16px", fontSize: 12,
+            color: "#999", cursor: "pointer", fontFamily: "inherit",
+          }}
+        >
+          ⚑ Compleja
         </button>
       </div>
 

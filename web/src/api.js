@@ -22,5 +22,13 @@ export const getOracionesPendientes = (params) => api.get("/api/anotacion/oracio
 export const guardarAnotacion       = (datos)  => api.post("/api/anotacion/anotar", datos);
 export const getStatsAnotador       = (id)     => api.get(`/api/anotacion/stats/${id}`);
 export const calcularKappa          = (params) => api.get("/api/anotacion/kappa", { params });
+export const getLexicon             = (tipo)   => api.get("/api/anotacion/lexicon", { params: tipo ? { tipo } : {} });
+export const marcarCompleja         = (id)     => api.put(`/api/anotacion/oraciones/${id}/compleja`, { compleja: true });
+
+// Fase 5 — Entrenamiento
+export const getDatasetStats    = ()    => api.get("/api/entrenamiento/dataset");
+export const getEntrenamientos  = ()    => api.get("/api/entrenamiento/lista");
+export const getEstadoJob       = (id)  => api.get(`/api/entrenamiento/estado/${id}`);
+export const iniciarEntrenamiento = ()  => api.post("/api/entrenamiento/iniciar");
 
 export default api;
