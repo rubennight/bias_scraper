@@ -17,6 +17,7 @@ app.use("/api/eventos",        require("./routes/eventos"));
 app.use("/api/articulos",      require("./routes/articulos"));
 app.use("/api/anotacion",      require("./routes/anotacion"));
 app.use("/api/entrenamiento",  require("./routes/entrenamiento"));
+app.use("/api/actores",        require("./routes/actores"));
 app.use("/api/scraper",        require("./routes/scraper"));
 
 // Health check

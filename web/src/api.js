@@ -24,6 +24,14 @@ export const getStatsAnotador       = (id)     => api.get(`/api/anotacion/stats/
 export const calcularKappa          = (params) => api.get("/api/anotacion/kappa", { params });
 export const getLexicon             = (tipo)   => api.get("/api/anotacion/lexicon", { params: tipo ? { tipo } : {} });
 export const marcarCompleja         = (id)     => api.put(`/api/anotacion/oraciones/${id}/compleja`, { compleja: true });
+export const marcarDescartada       = (id)     => api.put(`/api/anotacion/oraciones/${id}/descartada`, { descartada: true });
+
+// Banco de Anotaciones — revisión, edición y borrado
+export const getBancoAnotaciones    = (params) => api.get("/api/anotacion/banco", { params });
+export const eliminarAnotacion      = (id, anotador_id) => api.delete(`/api/anotacion/${id}`, { params: { anotador_id } });
+
+// Actores
+export const getActoresEvento = (id, params) => api.get(`/api/actores/evento/${id}`, { params });
 
 // Fase 5 — Entrenamiento
 export const getDatasetStats    = ()    => api.get("/api/entrenamiento/dataset");

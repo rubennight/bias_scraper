@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>bias_scraper — El mismo hecho. Tres realidades distintas.</title>
+<meta name="description" content="Sistema computacional que separa el sesgo ideológico del contenido factual en noticias mexicanas. Tesis de licenciatura, Ingeniería en Software, UAZ.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+
+/* ============================================================
+   RESET Y VARIABLES
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --black:   #0C0B09;
+  --paper:   #F4EFE5;
+  --red:     #C0392B;
+  --ochre:   #C9A227;
+  --white:   #FFFFFF;
+  --rule:    #D8D1BF;
+  --cat-a:   #2e7d32;
+  --cat-b:   #C9A227;
+  --cat-c:   #C0392B;
+
+  --f-head: "Inter", sans-serif;
+  --f-body: "Lora", serif;
+}
+
+/* scroll-behavior stays "auto": the JS lerp loop below owns all scroll
+   easing (wheel + anchor jumps), so native smooth-scroll would double up */
+html { scroll-behavior: auto; }
+
+body {
+  background: var(--paper);
+  color: var(--black);
+  font-family: var(--f-body);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ============================================================
+   SMOOTH SCROLL RIG
+   #scroll-content holds the real page and is transformed with a
+   lerped translateY; #scroll-spacer is an invisible full-height
+   twin that gives the document its real scrollbar/scroll range.
+   ============================================================ */
+#scroll-content {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%;
+  will-change: transform;
+}
+
+#scroll-spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.progress-bar {
+  position: fixed;
+  top: 59px; left: 0;
+  height: 2px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--red), var(--ochre));
+  z-index: 501;
+  will-change: width;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #scroll-content { position: static; transform: none !important; }
+  #scroll-spacer { display: none; }
+}
+
+img, svg { display: block; max-width: 100%; }
+
+a { color: inherit; text-decoration: none; }
+
+.container {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+section { position: relative; }
+
+.eyebrow {
+  font-family: var(--f-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+
+.section-title {
+  font-family: var(--f-head);
+  font-weight: 900;
+  font-size: clamp(28px, 4vw, 44px);
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+  margin: 10px 0 14px;
+}
+
+.section-lead {
+  font-size: 17px;
+  color: #3a362f;
+  max-width: 640px;
+  margin-bottom: 44px;
+}
+
+/* ============================================================
+   REVEAL ON SCROLL
+   ============================================================ */
+.reveal {
+  opacity: 0;
+  transform: translateY(34px) scale(.975);
+  transition: opacity 1s cubic-bezier(.16,1,.3,1),
+              transform 1s cubic-bezier(.16,1,.3,1);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.reveal-delay-1 { transition-delay: .07s; }
+.reveal-delay-2 { transition-delay: .14s; }
+.reveal-delay-3 { transition-delay: .21s; }
+.reveal-delay-4 { transition-delay: .28s; }
+.reveal-delay-5 { transition-delay: .35s; }
+.reveal-delay-6 { transition-delay: .42s; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+}
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+.navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 500;
+  background: rgba(12, 11, 9, .92);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.navbar-inner {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.navbar-logo {
+  font-family: var(--f-head);
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--red);
+  letter-spacing: -.01em;
+}
+.navbar-logo span { color: var(--paper); }
+
+.navbar-links {
+  display: flex;
+  gap: 28px;
+  list-style: none;
+}
+
+.navbar-links a {
+  font-family: var(--f-head);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #cfc9bd;
+  transition: color .15s;
+  position: relative;
+  padding: 4px 0;
+}
+.navbar-links a:hover { color: var(--white); }
+.navbar-links a::after {
+  content: "";
+  position: absolute;
+  bottom: -2px; left: 0;
+  width: 0; height: 2px;
+  background: var(--red);
+  transition: width .2s;
+}
+.navbar-links a:hover::after { width: 100%; }
+
+.navbar-toggle {
+  display: none;
+  background: none;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: var(--paper);
+  width: 34px; height: 34px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero {
+  min-height: 100vh;
+  background: var(--black);
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  padding: 100px 0 60px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 6px;
+  background: var(--red);
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  right: -180px; top: -180px;
+  width: 520px; height: 520px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(192,57,43,.16), transparent 70%);
+  pointer-events: none;
+}
+
+.hero-inner {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 32px 0 44px;
+  width: 100%;
+}
+
+.hero-kicker {
+  font-family: var(--f-head);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ochre);
+  margin-bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hero-kicker::before {
+  content: "";
+  width: 26px; height: 1px;
+  background: var(--ochre);
+}
+
+.hero-title {
+  font-family: var(--f-head);
+  font-weight: 900;
+  font-size: clamp(38px, 6.4vw, 84px);
+  line-height: 1.03;
+  letter-spacing: -0.02em;
+  max-width: 900px;
+  margin-bottom: 26px;
+}
+.hero-title em {
+  font-style: normal;
+  color: var(--red);
+}
+
+.hero-sub {
+  font-family: var(--f-body);
+  font-size: 18px;
+  color: #d8d3c8;
+  max-width: 560px;
+  margin-bottom: 8px;
+}
+.hero-sub strong {
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.hero-sub-2 {
+  font-family: var(--f-body);
+  font-size: 15px;
+  color: #8f897b;
+  max-width: 540px;
+  margin-bottom: 40px;
+}
+
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--f-head);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: .02em;
+  color: var(--black);
+  background: var(--red);
+  border: 2px solid var(--red);
+  padding: 14px 26px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background .18s, color .18s, transform .18s;
+}
+.btn-cta:hover {
+  background: transparent;
+  color: var(--white);
+  transform: translateX(3px);
+}
+
+/* ============================================================
+   PROBLEMA
+   ============================================================ */
+.problema {
+  background: var(--paper);
+  padding: 130px 0 110px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.medios-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 36px;
+}
+
+.medio-card {
+  background: var(--white);
+  border: 1.5px solid var(--rule);
+  border-top: 4px solid var(--tag-color, #999);
+  padding: 24px 22px;
+  transition: border-color .18s, transform .18s, box-shadow .18s;
+}
+.medio-card:hover {
+  border-color: var(--red);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px rgba(12,11,9,.08);
+}
+
+.medio-tag {
+  font-family: var(--f-head);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--tag-color, #999);
+  margin-bottom: 12px;
+}
+
+.medio-headline {
+  font-family: var(--f-head);
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1.3;
+  margin-bottom: 10px;
+  color: var(--black);
+}
+
+.medio-frag {
+  font-size: 13.5px;
+  font-style: italic;
+  color: #55503f;
+  line-height: 1.55;
+}
+
+.hecho-box {
+  background: var(--black);
+  color: var(--paper);
+  padding: 30px 32px;
+  border-left: 6px solid var(--ochre);
+  margin-bottom: 30px;
+}
+
+.hecho-label {
+  font-family: var(--f-head);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ochre);
+  margin-bottom: 10px;
+}
+
+.hecho-text {
+  font-family: var(--f-body);
+  font-size: 17px;
+  color: var(--white);
+  margin-bottom: 14px;
+}
+
+.hecho-note {
+  font-size: 13.5px;
+  color: #a39c8c;
+  font-style: italic;
+}
+
+.quote-lenin {
+  font-family: var(--f-body);
+  font-style: italic;
+  font-size: 15px;
+  color: #55503f;
+  border-left: 2px solid var(--rule);
+  padding-left: 18px;
+  max-width: 620px;
+}
+.quote-lenin cite {
+  display: block;
+  font-style: normal;
+  font-family: var(--f-head);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--red);
+  margin-top: 10px;
+}
+
+/* ============================================================
+   PIPELINE
+   ============================================================ */
+.pipeline {
+  background: var(--white);
+  padding: 120px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.pipeline-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0;
+  margin-top: 20px;
+}
+
+.pipeline-step {
+  padding: 0 18px 0 0;
+  border-right: 1px solid var(--rule);
+  position: relative;
+}
+.pipeline-step:last-child { border-right: none; padding-right: 0; }
+
+.pipeline-num {
+  font-family: var(--f-head);
+  font-weight: 900;
+  font-size: 40px;
+  color: var(--red);
+  line-height: 1;
+  margin-bottom: 14px;
+}
+
+.pipeline-name {
+  font-family: var(--f-head);
+  font-weight: 800;
+  font-size: 14.5px;
+  margin-bottom: 8px;
+  min-height: 38px;
+}
+
+.pipeline-desc {
+  font-size: 12.5px;
+  color: #5a5648;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  min-height: 56px;
+}
+
+.pipeline-status {
+  font-family: var(--f-head);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 2px;
+}
+.status-listo   { background: #eaf3ea; color: var(--cat-a); }
+.status-curso   { background: #fbf3dd; color: #96760f; }
+.status-pend    { background: #f0ede8; color: #9a948a; }
+
+/* ============================================================
+   TAXONOMÍA
+   ============================================================ */
+.taxonomia {
+  background: var(--paper);
+  padding: 120px 0;
+}
+
+/* Gradient seam: marks the high-contrast light/dark boundaries
+   (hero→problema, taxonomía→importa, importa→estado) instead of
+   a flat hairline — a small spot-color "bleed" at the fold. */
+.seam {
+  height: 3px;
+  background: linear-gradient(90deg, var(--red), var(--ochre));
+  position: relative;
+  z-index: 2;
+}
+
+.tax-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+  margin-top: 20px;
+}
+
+.tax-col {
+  background: var(--white);
+  border: 1.5px solid var(--rule);
+  border-top: 6px solid var(--tax-color);
+  padding: 28px 26px 30px;
+  transition: border-color .18s, transform .18s;
+}
+.tax-col:hover {
+  border-color: var(--tax-color);
+  transform: translateY(-4px);
+}
+
+.tax-letter {
+  font-family: var(--f-head);
+  font-weight: 900;
+  font-size: 34px;
+  color: var(--tax-color);
+  margin-bottom: 6px;
+}
+
+.tax-name {
+  font-family: var(--f-head);
+  font-weight: 800;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--black);
+  margin-bottom: 16px;
+}
+
+.tax-def {
+  font-size: 14.5px;
+  color: #454130;
+  margin-bottom: 20px;
+  line-height: 1.55;
+}
+
+.tax-example {
+  background: color-mix(in srgb, var(--tax-color) 8%, var(--paper));
+  border-left: 3px solid var(--tax-color);
+  padding: 14px 16px;
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.55;
+  color: #3a362a;
+}
+.tax-example b {
+  display: block;
+  font-style: normal;
+  font-family: var(--f-head);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--tax-color);
+  margin-bottom: 6px;
+}
+
+/* ============================================================
+   POR QUÉ IMPORTA
+   ============================================================ */
+.importa {
+  background: var(--black);
+  color: var(--paper);
+  padding: 120px 0;
+}
+
+.importa .section-title { color: var(--white); }
+.importa .section-lead { color: #a39c8c; }
+
+.importa-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  margin-top: 30px;
+}
+
+.importa-col-label {
+  font-family: var(--f-head);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.importa-col:first-child .importa-col-label { color: var(--red); }
+.importa-col:last-child .importa-col-label { color: var(--ochre); }
+
+.importa-col p {
+  font-size: 15.5px;
+  color: #cbc5b8;
+  margin-bottom: 16px;
+  line-height: 1.65;
+}
+.importa-col p:last-child { margin-bottom: 0; }
+.importa-col strong { color: var(--white); font-weight: 600; }
+
+.importa-divider {
+  display: none;
+}
+
+/* ============================================================
+   ESTADO ACTUAL
+   ============================================================ */
+.estado {
+  background: var(--paper);
+  padding: 100px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
+}
+
+.estado .eyebrow, .estado .section-lead { margin-left: auto; margin-right: auto; }
+.estado .section-title { margin-left: auto; margin-right: auto; }
+
+.estado-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-top: 30px;
+}
+
+.estado-item {
+  padding: 20px 10px;
+  border-right: 1px solid var(--rule);
+}
+.estado-item:last-child { border-right: none; }
+
+.estado-num {
+  font-family: var(--f-head);
+  font-weight: 900;
+  font-size: clamp(32px, 4vw, 48px);
+  color: var(--red);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.estado-label {
+  font-family: var(--f-head);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #6b6656;
+}
+
+.estado-note {
+  margin-top: 34px;
+  font-size: 14.5px;
+  font-style: italic;
+  color: #6b6656;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.site-footer {
+  background: var(--black);
+  color: #857f70;
+  padding: 54px 0 40px;
+  text-align: center;
+}
+
+.footer-line {
+  font-family: var(--f-head);
+  font-size: 13px;
+  color: #cfc9bd;
+  margin-bottom: 6px;
+}
+
+.footer-sub {
+  font-size: 12.5px;
+  color: #6f6a5c;
+  margin-bottom: 22px;
+}
+
+.footer-quote {
+  font-family: var(--f-body);
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ochre);
+  max-width: 460px;
+  margin: 0 auto;
+  line-height: 1.6;
+  border-top: 1px solid #262420;
+  padding-top: 20px;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 860px) {
+  .navbar-links { display: none; }
+  .navbar-toggle { display: block; }
+
+  .navbar.open .navbar-links {
+    display: flex;
+    position: absolute;
+    top: 60px; left: 0; right: 0;
+    background: var(--black);
+    flex-direction: column;
+    padding: 18px 32px 24px;
+    gap: 16px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+
+  .medios-grid, .tax-grid { grid-template-columns: 1fr; }
+  .pipeline-row { grid-template-columns: repeat(2, 1fr); row-gap: 34px; }
+  .pipeline-step { border-right: none; padding-right: 0; }
+  .pipeline-step:nth-child(odd) { padding-right: 16px; border-right: 1px solid var(--rule); }
+
+  .importa-grid { grid-template-columns: 1fr; gap: 40px; }
+  .estado-grid { grid-template-columns: repeat(2, 1fr); row-gap: 26px; }
+  .estado-item:nth-child(odd) { border-right: 1px solid var(--rule); }
+  .estado-item:nth-child(even) { border-right: none; }
+
+  .hero-inner { padding-left: 32px; }
+}
+
+@media (max-width: 520px) {
+  .pipeline-row { grid-template-columns: 1fr; }
+  .pipeline-step { border-right: none !important; padding-right: 0 !important; }
+  .estado-grid { grid-template-columns: 1fr; }
+  .estado-item { border-right: none !important; border-bottom: 1px solid var(--rule); padding-bottom: 22px; }
+  .estado-item:last-child { border-bottom: none; }
+}
+
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     NAVBAR
+     ============================================================ -->
+<nav class="navbar" id="navbar">
+  <div class="navbar-inner">
+    <a href="#top" class="navbar-logo">bias<span>_</span>scraper</a>
+    <ul class="navbar-links">
+      <li><a href="#problema">El problema</a></li>
+      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#taxonomia">Taxonomía</a></li>
+      <li><a href="#importa">Por qué importa</a></li>
+      <li><a href="#estado">Estado actual</a></li>
+    </ul>
+    <button class="navbar-toggle" id="navToggle" aria-label="Abrir menú">☰</button>
+  </div>
+  <div class="progress-bar" id="progressBar"></div>
+</nav>
+
+<!-- ============================================================
+     Wrapper transformado por el rig de scroll suave (ver JS al
+     final). El spacer gemelo, más abajo, le da a <body> su alto
+     real para que exista una barra de scroll nativa.
+     ============================================================ -->
+<div id="scroll-content">
+
+<!-- ============================================================
+     1. HERO
+     ============================================================ -->
+<header class="hero" id="top">
+  <div class="hero-inner">
+    <div class="hero-kicker">Tesis de licenciatura · UAZ · 2026</div>
+    <h1 class="hero-title">El mismo hecho.<br>Tres <em>realidades</em> distintas.</h1>
+    <p class="hero-sub"><strong>bias_scraper</strong> es un sistema computacional que separa el sesgo ideológico del contenido factual en noticias mexicanas.</p>
+    <p class="hero-sub-2">Toma la misma noticia cubierta por medios de distinta orientación y aísla, oración por oración, qué es hecho y qué es mediación.</p>
+    <a href="#pipeline" class="btn-cta">Ver cómo funciona →</a>
+  </div>
+</header>
+
+<div class="seam"></div>
+
+<!-- ============================================================
+     2. EL PROBLEMA
+     ============================================================ -->
+<section class="problema" id="problema">
+  <div class="container">
+    <div class="eyebrow reveal">El problema</div>
+    <h2 class="section-title reveal reveal-delay-1">Un arancel, tres coberturas.</h2>
+    <p class="section-lead reveal reveal-delay-2">
+      En abril de 2026, Trump confirmó un arancel del 145% a importaciones chinas. El mismo hecho llegó a los lectores mexicanos filtrado por la línea editorial de cada medio.
+    </p>
+
+    <div class="medios-grid">
+      <div class="medio-card reveal reveal-delay-1" style="--tag-color:#2e7d32">
+        <div class="medio-tag">Medio de izquierda</div>
+        <div class="medio-headline">EU castiga al mundo: los aranceles de Trump golpean primero a los pueblos del Sur</div>
+        <div class="medio-frag">"...la ofensiva proteccionista de Washington vuelve a poner el costo del ajuste sobre las espaldas de los trabajadores, mientras el capital financiero especula con la incertidumbre que él mismo provocó."</div>
+      </div>
+      <div class="medio-card reveal reveal-delay-2" style="--tag-color:#C9A227">
+        <div class="medio-tag">Medio crítico / centro</div>
+        <div class="medio-headline">Aranceles de EU a China: México queda atrapado entre dos gigantes</div>
+        <div class="medio-frag">"...el gobierno mexicano enfrenta la difícil tarea de no quedar atrapado en el fuego cruzado de una guerra comercial que no eligió y cuyos efectos apenas comienza a dimensionar."</div>
+      </div>
+      <div class="medio-card reveal reveal-delay-3" style="--tag-color:#C0392B">
+        <div class="medio-tag">Medio de derecha</div>
+        <div class="medio-headline">Trump pone orden: aranceles a China abren una oportunidad histórica para México</div>
+        <div class="medio-frag">"...el nearshoring finalmente premia la disciplina fiscal y la certeza jurídica que México ha construido, mientras Beijing paga el precio de años de competencia desleal."</div>
+      </div>
+    </div>
+
+    <div class="hecho-box reveal">
+      <div class="hecho-label">El hecho verificable</div>
+      <p class="hecho-text">"Trump confirmó aranceles del 145% sobre importaciones chinas el 9 de abril de 2026."</p>
+      <div class="hecho-note">Todo lo demás — "castiga al mundo", "atrapado entre dos gigantes", "pone orden" — es mediación ideológica sobre el mismo hecho.</div>
+    </div>
+
+    <blockquote class="quote-lenin reveal">
+      "La prensa no es solo un propagandista colectivo y un agitador colectivo, es también un organizador colectivo."
+      <cite>— Lenin, ¿Por dónde empezar?, 1901</cite>
+    </blockquote>
+  </div>
+</section>
+
+<!-- ============================================================
+     3. CÓMO FUNCIONA — PIPELINE
+     ============================================================ -->
+<section class="pipeline" id="pipeline">
+  <div class="container">
+    <div class="eyebrow reveal">Cómo funciona</div>
+    <h2 class="section-title reveal reveal-delay-1">El pipeline, en seis pasos.</h2>
+    <p class="section-lead reveal reveal-delay-2">
+      Metodología KDD aplicada a texto periodístico: de la recolección cruda a la separación explicable entre hecho y sesgo.
+    </p>
+
+    <div class="pipeline-row">
+      <div class="pipeline-step reveal reveal-delay-1">
+        <div class="pipeline-num">1</div>
+        <div class="pipeline-name">RSS</div>
+        <div class="pipeline-desc">Recolección continua de artículos desde feeds de medios mexicanos de distinta orientación.</div>
+        <span class="pipeline-status status-listo">✓ Listo</span>
+      </div>
+      <div class="pipeline-step reveal reveal-delay-2">
+        <div class="pipeline-num">2</div>
+        <div class="pipeline-name">TF-IDF</div>
+        <div class="pipeline-desc">Vectorización de contenido para medir similitud temática entre artículos de distintas fuentes.</div>
+        <span class="pipeline-status status-listo">✓ Listo</span>
+      </div>
+      <div class="pipeline-step reveal reveal-delay-3">
+        <div class="pipeline-num">3</div>
+        <div class="pipeline-name">Grafo + BFS</div>
+        <div class="pipeline-desc">Agrupación de artículos que cubren el mismo evento mediante recorrido de grafo de similitud.</div>
+        <span class="pipeline-status status-listo">✓ Listo</span>
+      </div>
+      <div class="pipeline-step reveal reveal-delay-4">
+        <div class="pipeline-num">4</div>
+        <div class="pipeline-name">Anotación A/B/C</div>
+        <div class="pipeline-desc">Clasificación manual de oraciones en Hecho, Evaluación o Marco ideológico, con doble anotador.</div>
+        <span class="pipeline-status status-curso">⏳ En curso</span>
+      </div>
+      <div class="pipeline-step reveal reveal-delay-5">
+        <div class="pipeline-num">5</div>
+        <div class="pipeline-name">XGBoost + SHAP</div>
+        <div class="pipeline-desc">Entrenamiento del clasificador y explicación de qué palabras empujan cada decisión.</div>
+        <span class="pipeline-status status-pend">○ Pendiente</span>
+      </div>
+      <div class="pipeline-step reveal reveal-delay-6">
+        <div class="pipeline-num">6</div>
+        <div class="pipeline-name">Separación</div>
+        <div class="pipeline-desc">Salida final: el mismo evento, con el hecho aislado de la mediación ideológica de cada medio.</div>
+        <span class="pipeline-status status-pend">○ Pendiente</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     4. LA TAXONOMÍA
+     ============================================================ -->
+<section class="taxonomia" id="taxonomia">
+  <div class="container">
+    <div class="eyebrow reveal">La taxonomía</div>
+    <h2 class="section-title reveal reveal-delay-1">Tres categorías, una por oración.</h2>
+    <p class="section-lead reveal reveal-delay-2">
+      Cada oración del corpus se clasifica en una de tres categorías. La frontera entre ellas es el criterio que hace el sistema entrenable.
+    </p>
+
+    <div class="tax-grid">
+      <div class="tax-col reveal reveal-delay-1" style="--tax-color:#2e7d32">
+        <div class="tax-letter">A</div>
+        <div class="tax-name">Hecho verificable</div>
+        <p class="tax-def">Información que puede comprobarse con un documento, cifra o registro físico.</p>
+        <div class="tax-example">
+          <b>Ejemplo del corpus</b>
+          "Trump confirmó aranceles del 145% sobre importaciones chinas el 9 de abril de 2026."
+        </div>
+      </div>
+      <div class="tax-col reveal reveal-delay-2" style="--tax-color:#C9A227">
+        <div class="tax-letter">B</div>
+        <div class="tax-name">Evaluación</div>
+        <p class="tax-def">Juicio de valor que puede eliminarse sin perder ningún dato verificable.</p>
+        <div class="tax-example">
+          <b>Ejemplo del corpus</b>
+          "...en medio de <u>la escalada delirante</u> del comercio internacional" — evaluación pura del periodista, no aporta información nueva.
+        </div>
+      </div>
+      <div class="tax-col reveal reveal-delay-3" style="--tax-color:#C0392B">
+        <div class="tax-letter">C</div>
+        <div class="tax-name">Marco ideológico</div>
+        <p class="tax-def">Palabra con carga política donde existe un sinónimo neutral que otro medio usaría.</p>
+        <div class="tax-example">
+          <b>Ejemplo del corpus</b>
+          "guerra comercial" vs. "disputa arancelaria" — mismo fenómeno, distinta carga ideológica según quién lo nombra.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="seam"></div>
+
+<!-- ============================================================
+     5. POR QUÉ IMPORTA
+     ============================================================ -->
+<section class="importa" id="importa">
+  <div class="container">
+    <div class="eyebrow reveal">Por qué importa</div>
+    <h2 class="section-title reveal reveal-delay-1">No es un problema técnico. Tampoco es solo político.</h2>
+    <p class="section-lead reveal reveal-delay-2">
+      Separar hecho de sesgo requiere las dos lecturas al mismo tiempo.
+    </p>
+
+    <div class="importa-grid">
+      <div class="importa-col reveal reveal-delay-1">
+        <div class="importa-col-label">El argumento político</div>
+        <p>Gramsci llamaba <strong>hegemonía</strong> al proceso por el cual una clase impone su visión del mundo como sentido común, sin necesidad de censura ni coerción directa. La prensa es uno de sus aparatos.</p>
+        <p>El sesgo en la cobertura noticiosa mexicana no es un accidente editorial ni un error de redacción: es estructural. Cada medio reproduce, oración por oración, la posición de clase de quien lo financia.</p>
+        <p>Nombrar ese mecanismo — mostrar exactamente en qué palabra ocurre la mediación — es un primer paso para leer la prensa con otros ojos.</p>
+      </div>
+      <div class="importa-col reveal reveal-delay-2">
+        <div class="importa-col-label">El argumento técnico</div>
+        <p>Detectar sesgo "a ojo" no escala y no es reproducible. Se necesitaba un método capaz de comparar automáticamente cómo distintos medios cubren el mismo evento, oración por oración.</p>
+        <p>El pipeline junta detección de eventos por similitud (TF-IDF + grafo), anotación supervisada con doble revisor, y un clasificador explicable (XGBoost + SHAP) que muestra qué palabra específica activó la decisión.</p>
+        <p>El resultado no es "este medio es de derecha": es <strong>qué palabra exacta</strong>, en qué oración, marca la diferencia entre hecho y encuadre.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="seam"></div>
+
+<!-- ============================================================
+     6. ESTADO ACTUAL
+     ============================================================ -->
+<section class="estado" id="estado">
+  <div class="container">
+    <div class="eyebrow reveal">Estado actual</div>
+    <h2 class="section-title reveal reveal-delay-1">El corpus, hasta ahora.</h2>
+
+    <div class="estado-grid">
+      <div class="estado-item reveal reveal-delay-1">
+        <div class="estado-num">8</div>
+        <div class="estado-label">Medios monitoreados</div>
+      </div>
+      <div class="estado-item reveal reveal-delay-2">
+        <div class="estado-num">2,272</div>
+        <div class="estado-label">Oraciones extraídas</div>
+      </div>
+      <div class="estado-item reveal reveal-delay-3">
+        <div class="estado-num">3</div>
+        <div class="estado-label">Eventos detectados</div>
+      </div>
+      <div class="estado-item reveal reveal-delay-4">
+        <div class="estado-num">0</div>
+        <div class="estado-label">Fallos de recolección</div>
+      </div>
+    </div>
+
+    <p class="estado-note reveal reveal-delay-5">Fases 1–3 implementadas. Anotación en progreso.</p>
+  </div>
+</section>
+
+<!-- ============================================================
+     7. FOOTER
+     ============================================================ -->
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-line">Una investigación de Rubén Jiménez Navarro · UAZ Ingeniería en Software · 2026</div>
+    <div class="footer-sub">Asesoría: Dra. Julieta Guadalupe Rodríguez Ruíz</div>
+    <p class="footer-quote">"Las ideas de la clase dominante son en cada época las ideas dominantes." — Marx &amp; Engels, La ideología alemana, 1845</p>
+  </div>
+</footer>
+
+</div><!-- /#scroll-content -->
+<div id="scroll-spacer"></div>
+
+<script>
+/* ============================================================
+   NAVBAR: menú móvil
+   ============================================================ */
+const navbar = document.getElementById('navbar');
+const navToggle = document.getElementById('navToggle');
+navToggle.addEventListener('click', () => navbar.classList.toggle('open'));
+document.querySelectorAll('.navbar-links a').forEach(link => {
+  link.addEventListener('click', () => navbar.classList.remove('open'));
+});
+
+/* ============================================================
+   SCROLL SUAVE: rig de lerp casero (sin librerías)
+   #scroll-content va fijo y se traslada con un valor que persigue
+   a window.scrollY con una pequeña inercia — así el wheel, las
+   flechas del teclado y los anclas del navbar comparten la misma
+   sensación "premium" en vez del salto brusco nativo.
+   ============================================================ */
+const scrollContent = document.getElementById('scroll-content');
+const scrollSpacer   = document.getElementById('scroll-spacer');
+const progressBar    = document.getElementById('progressBar');
+const reduceMotion   = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function syncSpacerHeight() {
+  scrollSpacer.style.height = scrollContent.scrollHeight + 'px';
+}
+syncSpacerHeight();
+window.addEventListener('load', syncSpacerHeight);
+window.addEventListener('resize', syncSpacerHeight);
+if ('ResizeObserver' in window) {
+  new ResizeObserver(syncSpacerHeight).observe(scrollContent);
+}
+
+if (!reduceMotion) {
+  let current = window.scrollY;
+  const ease = 0.085; // menor = más inercia
+
+  const tick = () => {
+    const target = window.scrollY;
+    current += (target - current) * ease;
+    if (Math.abs(target - current) < 0.05) current = target;
+
+    scrollContent.style.transform = `translate3d(0, ${-current}px, 0)`;
+
+    const maxScroll = scrollSpacer.offsetHeight - window.innerHeight;
+    const progress  = maxScroll > 0 ? Math.min(current / maxScroll, 1) : 0;
+    progressBar.style.width = (progress * 100) + '%';
+
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+} else {
+  // Movimiento reducido: sin transform ni lerp, solo la barra de progreso
+  const onScroll = () => {
+    const maxScroll = scrollSpacer.offsetHeight - window.innerHeight;
+    const progress  = maxScroll > 0 ? Math.min(window.scrollY / maxScroll, 1) : 0;
+    progressBar.style.width = (progress * 100) + '%';
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+}
+
+/* ============================================================
+   REVEAL ON SCROLL: IntersectionObserver, sin librerías
+   ============================================================ */
+const revealEls = document.querySelectorAll('.reveal');
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      io.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+revealEls.forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

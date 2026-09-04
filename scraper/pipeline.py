@@ -29,6 +29,7 @@ from db import (
 )
 from clustering import detectar_eventos, get_semana_iso
 from annotator import segmentar_articulos_nuevos
+from actors import extraer_actores_nuevos
 
 # ── Logging ───────────────────────────────────────────────────
 # Todo lo que pase por logging.info() — incluyendo clustering.py
@@ -74,7 +75,7 @@ def ejecutar():
     log.info("=" * 60)
 
     # ── Paso 1: Preparar base de datos ───────────────────────
-    log.info("\n[1/3] Preparando base de datos...")
+    log.info("\n[1/5] Preparando base de datos...")
     crear_tablas()
     insertar_fuentes(FUENTES)
     fuentes = obtener_fuentes()
@@ -83,7 +84,7 @@ def ejecutar():
     fuente_idx = {f["nombre"]: f["id"] for f in fuentes}
 
     # ── Paso 2: KDD Fases 1 y 3 — Detección de eventos ──────
-    log.info("\n[2/3] Detectando eventos por clustering semántico...")
+    log.info("\n[2/5] Detectando eventos por clustering semántico...")
     log.info(f"      RSS secciones → filtro temático → keywords TF-IDF → grafo → BFS")
     eventos = detectar_eventos(ventana_inicio, ventana_fin)
 
@@ -94,7 +95,7 @@ def ejecutar():
     log.info(f"\n      {len(eventos)} eventos detectados con cobertura multi-fuente.")
 
     # ── Paso 3: Guardar en PostgreSQL ─────────────────────────
-    log.info("\n[3/3] Guardando en base de datos...")
+    log.info("\n[3/5] Guardando en base de datos...")
     total_articulos = 0
     total_guardados = 0
     total_fallidos  = 0
@@ -161,14 +162,22 @@ def ejecutar():
     # con spaCy para que estén listos cuando se inicie la anotación.
     # Solo procesa artículos que aún no tienen oraciones en la BD.
     if total_guardados > 0:
-        log.info(f"\n[4/4] Segmentando artículos nuevos para Fase 4 (anotación)...")
+        log.info(f"\n[4/5] Segmentando artículos nuevos para Fase 4 (anotación)...")
         try:
             seg = segmentar_articulos_nuevos()
             log.info(f"      {seg['articulos_procesados']} artículos → {seg['oraciones_creadas']} oraciones nuevas")
         except Exception as e:
             log.warning(f"      Segmentación falló: {e} — ejecuta annotator.py --segmentar manualmente")
     else:
-        log.info(f"\n[4/4] Sin artículos nuevos — segmentación omitida.")
+        log.info(f"\n[4/5] Sin artículos nuevos — segmentación omitida.")
+
+    # ── Paso 5: Extracción de actores ────────────────────────
+    log.info(f"\n[5/5] Extrayendo actores de eventos nuevos...")
+    try:
+        act = extraer_actores_nuevos()
+        log.info(f"      {act['eventos_procesados']} eventos → {act['total_actores']} actores extraídos")
+    except Exception as e:
+        log.warning(f"      Extracción de actores falló: {e} — ejecuta actors.py manualmente")
 
     # ── Resumen ───────────────────────────────────────────────
     duracion = datetime.now() - inicio

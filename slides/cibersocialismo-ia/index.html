@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>El valor ya no se extrae del hombre</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=Rubik+Mono+One&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   THEME — Cibersocialismo / archivo sovietico + brutalismo "new ugly"
+   Change these variables to retune the whole look.
+   =========================================== */
+:root{
+    --cream:#EDE6D4;
+    --paper-dark:#161310;
+    --ink:#161310;
+    --ink-soft:#3a352d;
+    --red:#B31E23;
+    --red-deep:#7A1216;
+    --gold:#C79A2E;
+    --teal:#3C6E62;
+    --stage-bg:#050403;
+    --slide-bg:var(--cream);
+
+    --font-display:'Oswald', sans-serif;
+    --font-mono:'JetBrains Mono', monospace;
+    --font-stamp:'Rubik Mono One', monospace;
+
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur: 0.7s;
+}
+
+*{ margin:0; padding:0; box-sizing:border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (viewport-base.css, in full)
+   =========================================== */
+html, body{
+    width:100%; height:100%; margin:0; overflow:hidden;
+    background: var(--stage-bg, #000);
+}
+.deck-viewport{
+    position:fixed; inset:0; overflow:hidden;
+    background: var(--stage-bg, #000);
+}
+.deck-stage{
+    position:absolute; left:0; top:0;
+    width:1920px; height:1080px; overflow:hidden;
+    transform-origin:0 0;
+    background: var(--slide-bg, #fff);
+}
+.slide{
+    position:absolute; inset:0;
+    width:1920px; height:1080px; overflow:hidden;
+    display:block;
+    visibility:hidden; opacity:0; pointer-events:none;
+    background: var(--slide-bg, #fff);
+}
+.slide.active, .slide.visible{
+    visibility:visible; opacity:1; pointer-events:auto; z-index:1;
+}
+img, video, canvas, svg{ max-width:100%; max-height:100%; }
+.deck-controls{
+    position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
+    z-index:1000;
+}
+@media print{
+    html, body{ width:1920px; height:auto; overflow:visible; background:#fff; }
+    .deck-viewport{ position:static; overflow:visible; background:#fff; }
+    .deck-stage{ position:static; width:auto; height:auto; transform:none !important; background:none; }
+    .slide{
+        position:relative; display:block !important; visibility:visible !important;
+        opacity:1 !important; pointer-events:auto !important;
+        width:1920px; height:1080px; break-after:page; page-break-after:always;
+    }
+    .slide:last-child{ break-after:auto; page-break-after:auto; }
+    .deck-controls{ display:none !important; }
+}
+@media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{
+        animation-duration:0.01ms !important;
+        transition-duration:0.2s !important;
+    }
+}
+
+/* ===========================================
+   SHARED DECORATIVE VOCABULARY
+   grain / halftone / frame / sash / star / stamp
+   =========================================== */
+.slide{ font-family: var(--font-mono); color: var(--ink); }
+
+.grain{ position:absolute; inset:0; opacity:.08; mix-blend-mode:multiply; pointer-events:none;
+    background-image:repeating-linear-gradient(0deg, #000 0px, transparent 1px, transparent 3px); }
+
+.halftone{ position:absolute; opacity:.14; pointer-events:none; border-radius:50%;
+    background-image:radial-gradient(currentColor 3px, transparent 3.5px); background-size:22px 22px; color:var(--ink); }
+
+.frame{ position:absolute; top:40px; left:40px; right:40px; bottom:40px;
+    border-top:14px solid var(--ink); border-left:5px solid var(--ink);
+    border-right:9px solid var(--ink); border-bottom:5px solid var(--ink); pointer-events:none; }
+
+.slide.dark .frame{ border-color: var(--cream); }
+
+.kicker{ font-family:var(--font-mono); font-weight:700; font-size:22px; letter-spacing:.3em;
+    color:var(--red-deep); text-transform:uppercase; }
+.slide.dark .kicker{ color:var(--gold); }
+
+.page-num{ position:absolute; right:96px; bottom:88px; font-family:var(--font-mono); font-size:18px;
+    letter-spacing:.2em; color:var(--ink-soft); }
+.slide.dark .page-num{ color:#c9c2b3; }
+
+.star{ width:120px; height:120px; background:var(--gold);
+    clip-path:polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+    box-shadow:0 0 0 5px var(--ink); }
+
+.stamp{ display:inline-block; transform:rotate(-8deg); border:5px solid var(--teal); padding:12px 24px;
+    font-family:var(--font-stamp); font-size:20px; color:var(--teal); letter-spacing:.1em; text-transform:uppercase;
+    background:rgba(60,110,98,.06); }
+
+.sash{ position:absolute; top:-40px; left:-260px; width:1100px; height:170px; background:var(--red);
+    transform:rotate(-7deg); box-shadow:0 0 0 6px var(--ink); }
+.sash span{ position:absolute; bottom:20px; left:320px; font-family:var(--font-display); font-weight:700;
+    font-size:28px; letter-spacing:.3em; color:var(--cream); text-transform:uppercase; }
+
+.hard-panel{ background:var(--cream); border:5px solid var(--ink); box-shadow:10px 10px 0 var(--ink); }
+.slide.dark .hard-panel{ background:var(--paper-dark); border-color:var(--cream); box-shadow:10px 10px 0 var(--gold); color:var(--cream); }
+
+/* ===========================================
+   TYPE + LAYOUT COMPONENTS
+   =========================================== */
+.slide-title{ font-family:var(--font-display); font-weight:900; text-transform:uppercase;
+    font-size:96px; line-height:.95; color:var(--ink); letter-spacing:.005em; }
+.slide.dark .slide-title{ color:var(--cream); }
+.slide-title em{ font-style:normal; color:var(--red); }
+.slide.dark .slide-title em{ color:var(--gold); }
+
+.bullets{ font-family:var(--font-mono); font-size:30px; line-height:1.55; color:var(--ink); }
+.slide.dark .bullets{ color:#eee6d6; }
+.bullets li{ list-style:none; padding-left:40px; position:relative; margin-bottom:26px; max-width:1180px; }
+.bullets li::before{ content:"—"; position:absolute; left:0; color:var(--red); font-weight:700; }
+.slide.dark .bullets li::before{ color:var(--gold); }
+
+.content-slide{ position:relative; width:100%; height:100%; padding:96px 120px; }
+.content-slide .kicker{ position:absolute; top:132px; left:120px; }
+.content-slide .slide-title{ position:absolute; left:118px; top:230px; width:1500px; }
+
+/* ===========================================
+   ANIMATION — staggered reveal
+   =========================================== */
+.reveal{ opacity:0; transform:translateY(34px); transition:opacity var(--dur) var(--ease-out-expo), transform var(--dur) var(--ease-out-expo); }
+.slide.visible .reveal{ opacity:1; transform:translateY(0); }
+.reveal:nth-child(1){ transition-delay:.05s; } .reveal:nth-child(2){ transition-delay:.15s; }
+.reveal:nth-child(3){ transition-delay:.25s; } .reveal:nth-child(4){ transition-delay:.35s; }
+.reveal:nth-child(5){ transition-delay:.45s; } .reveal:nth-child(6){ transition-delay:.55s; }
+
+/* ===========================================
+   SLIDE 1 — TITLE
+   =========================================== */
+#s1 .kicker-line{ position:absolute; top:130px; left:110px; font-family:var(--font-mono); font-weight:700;
+    font-size:22px; letter-spacing:.3em; color:var(--red-deep); text-transform:uppercase; }
+#s1 .archive-tag{ position:absolute; top:130px; right:130px; font-family:var(--font-mono); font-size:20px;
+    letter-spacing:.2em; color:var(--ink-soft); }
+#s1 .title{ position:absolute; left:104px; top:360px; width:1560px; font-family:var(--font-display); font-weight:900;
+    font-size:132px; line-height:.86; color:var(--ink); text-transform:uppercase; }
+#s1 .title em{ font-style:normal; color:var(--red); }
+#s1 .subtitle{ position:absolute; left:110px; top:730px; width:1250px; font-family:var(--font-mono); font-weight:500;
+    font-size:30px; color:var(--ink); line-height:1.5; border-left:6px solid var(--red); padding-left:26px; }
+#s1 .star-wrap{ position:absolute; top:110px; right:180px; }
+#s1 .stamp-wrap{ position:absolute; right:170px; bottom:150px; }
+#s1 .footer{ position:absolute; left:110px; bottom:88px; font-family:var(--font-mono); font-size:17px;
+    letter-spacing:.1em; color:var(--ink-soft); text-transform:uppercase; }
+#s1 .footer b{ color:var(--ink); }
+#s1 .halftone{ right:-120px; bottom:-140px; width:760px; height:760px; }
+
+/* ===========================================
+   SLIDE 3 — IMAGE / QUOTE ARCHIVE
+   =========================================== */
+#s3 .frame-photo{ position:absolute; left:120px; top:230px; width:820px; border:8px solid var(--ink); box-shadow:14px 14px 0 var(--ink); }
+#s3 .frame-photo img{ display:block; width:100%; height:auto; }
+#s3 .quote-panel{ position:absolute; left:1000px; top:230px; width:760px; padding:44px; }
+#s3 .quote-panel .stamp{ margin-bottom:28px; }
+#s3 .quote-text{ font-family:var(--font-mono); font-size:27px; line-height:1.55; color:var(--ink); font-style:italic; }
+#s3 .quote-cite{ margin-top:22px; font-family:var(--font-display); font-weight:700; font-size:22px; text-transform:uppercase; color:var(--red-deep); letter-spacing:.05em; }
+#s3 .caption{ position:absolute; left:120px; top:900px; width:1650px; font-family:var(--font-mono); font-size:24px; color:var(--ink-soft); border-top:4px solid var(--ink); padding-top:20px; }
+
+/* ===========================================
+   SLIDE 4 — FORMULA PANEL
+   =========================================== */
+.formula-panel{ position:absolute; left:118px; top:430px; width:900px; padding:36px 44px; text-align:center; }
+.formula-panel .f-text{ font-family:var(--font-stamp); font-size:34px; color:var(--red-deep); letter-spacing:.03em; }
+
+/* ===========================================
+   SLIDE 5 — BAR CHART (salario vs ganancia)
+   =========================================== */
+.barchart{ position:absolute; left:1160px; top:420px; width:620px; height:460px; display:flex; align-items:flex-end; gap:70px; padding:0 40px; }
+.bar{ width:200px; position:relative; border:5px solid var(--ink); box-shadow:8px 8px 0 var(--ink); }
+.bar .bar-label{ position:absolute; bottom:-56px; left:0; right:0; text-align:center; font-family:var(--font-mono); font-weight:700; font-size:20px; text-transform:uppercase; }
+.bar .bar-value{ position:absolute; top:-46px; left:0; right:0; text-align:center; font-family:var(--font-stamp); font-size:26px; }
+.bar.wage{ height:38%; background:var(--gold); }
+.bar.profit{ height:78%; background:var(--red); }
+
+/* ===========================================
+   SLIDE 8 — COST CURVE
+   =========================================== */
+.curve-wrap{ position:absolute; left:1140px; top:400px; width:640px; height:480px; }
+.curve-wrap svg{ width:100%; height:100%; }
+
+/* ===========================================
+   SLIDE 11 / 12 — CLOSING POSTER
+   =========================================== */
+.poster-title{ position:absolute; left:104px; top:340px; width:1600px; font-family:var(--font-display); font-weight:900;
+    font-size:110px; line-height:.92; color:var(--cream); text-transform:uppercase; }
+.poster-title em{ font-style:normal; color:var(--gold); }
+.poster-sub{ position:absolute; left:112px; top:660px; width:1350px; font-family:var(--font-mono); font-size:30px; color:#eee6d6; line-height:1.5; border-left:6px solid var(--gold); padding-left:26px; }
+
+/* ===========================================
+   DECK CONTROLS (outside slide-design system)
+   =========================================== */
+.deck-controls{ display:flex; gap:10px; align-items:center; }
+.progress-dots{ display:flex; gap:10px; }
+.progress-dots .dot{ width:9px; height:9px; border-radius:50%; background:rgba(237,230,212,.35); transition:background .3s; }
+.progress-dots .dot.active{ background:var(--gold); }
+
+/* ===========================================
+   INLINE EDITING
+   =========================================== */
+.edit-hotzone{ position:fixed; top:0; left:0; width:80px; height:80px; z-index:10000; cursor:pointer; }
+.edit-toggle{ position:fixed; top:16px; left:16px; z-index:10001; width:44px; height:44px; border-radius:50%;
+    border:3px solid var(--ink); background:var(--gold); font-size:20px; cursor:pointer;
+    opacity:0; pointer-events:none; transition:opacity .3s ease; }
+.edit-toggle.show, .edit-toggle.active{ opacity:1; pointer-events:auto; }
+[contenteditable="true"]{ outline:2px dashed var(--red); outline-offset:6px; cursor:text; }
+.save-toast{ position:fixed; bottom:24px; right:24px; background:var(--ink); color:var(--cream); font-family:var(--font-mono);
+    font-size:14px; letter-spacing:.08em; padding:12px 20px; border:3px solid var(--gold); z-index:10002;
+    opacity:0; transform:translateY(10px); transition:opacity .3s, transform .3s; pointer-events:none; }
+.save-toast.show{ opacity:1; transform:translateY(0); }
+</style>
+</head>
+<body>
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+    <!-- SLIDE 1 — TITLE -->
+    <section class="slide active" id="s1">
+        <div class="grain"></div>
+        <div class="halftone"></div>
+        <div class="frame"></div>
+        <div class="kicker-line reveal">Charla &mdash; 15 min</div>
+        <div class="archive-tag reveal">01 / 12 &mdash; Archivo No. 001</div>
+        <div class="star-wrap reveal"><div class="star"></div></div>
+        <h1 class="title reveal">El valor ya<br>no se extrae<br>del <em>hombre</em></h1>
+        <p class="subtitle reveal">Cibersocialismo y teoría del valor-trabajo<br>en la era de la IA</p>
+        <div class="stamp-wrap reveal"><span class="stamp">Proyecto&nbsp;/&nbsp;Tesis</span></div>
+        <div class="footer reveal">Rubén Jiménez Navarro &nbsp;&mdash;&nbsp; <b>BIAS Scraper</b></div>
+    </section>
+
+    <!-- SLIDE 2 — FRAMING (dark section-break) -->
+    <section class="slide dark" id="s2">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">Marco teórico</div>
+            <h2 class="slide-title reveal" style="top:230px;">Si el sesgo es real,<br>la ciencia tampoco<br>es <em>inocente</em></h2>
+            <ul class="bullets reveal" style="position:absolute; left:120px; top:680px;">
+                <li>Un detector de sesgo necesita explicar <b>por qué</b> existe el sesgo.</li>
+                <li>La "neutralidad" de los medios y de la ciencia no es un dato: es una hipótesis que hay que probar.</li>
+                <li>Marco de hoy: economía política del valor + IA.</li>
+            </ul>
+        </div>
+        <div class="page-num">02 / 12</div>
+    </section>
+
+    <!-- SLIDE 3 — IMAGE / QUOTE ARCHIVE -->
+    <section class="slide" id="s3">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="kicker reveal" style="position:absolute; top:132px; left:120px;">Archivo &mdash; 02</div>
+        <div class="frame-photo reveal">
+            <img src="assets/impartial_science.jpg" alt="Cartel soviético con cita de Lenin sobre la imparcialidad de la ciencia">
+        </div>
+        <div class="quote-panel reveal">
+            <span class="stamp">Traducción</span>
+            <p class="quote-text">"Esperar que la ciencia sea imparcial en una sociedad de esclavos asalariados es tan ingenuamente necio como esperar imparcialidad de los fabricantes sobre si el salario de los obreros no debería aumentarse a costa de disminuir las ganancias del capital."</p>
+            <p class="quote-cite">V. I. Lenin &mdash; Las tres fuentes y las tres partes integrantes del marxismo</p>
+        </div>
+        <p class="caption reveal">Toda medición de sesgo parte de una postura sobre quién produce el discurso &mdash; y a quién beneficia.</p>
+        <div class="page-num">03 / 12</div>
+    </section>
+
+    <!-- SLIDE 4 — LTV -->
+    <section class="slide" id="s4">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">Teoría del valor-trabajo</div>
+            <h2 class="slide-title reveal">El valor viene<br>del <em>trabajo</em>,<br>no del precio</h2>
+        </div>
+        <div class="hard-panel formula-panel reveal">
+            <p class="f-text">VALOR = TRABAJO<br>SOCIALMENTE NECESARIO</p>
+        </div>
+        <ul class="bullets reveal" style="position:absolute; left:1120px; top:680px; width:680px;">
+            <li>Una mercancía vale lo que cuesta producirla en trabajo humano promedio.</li>
+            <li>El capital no "crea" valor: lo organiza y se apropia de una parte.</li>
+        </ul>
+        <div class="page-num">04 / 12</div>
+    </section>
+
+    <!-- SLIDE 5 — PLUSVALÍA -->
+    <section class="slide" id="s5">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">Plusvalía</div>
+            <h2 class="slide-title reveal">La ganancia es<br><em>trabajo</em> no pagado</h2>
+            <ul class="bullets reveal" style="position:absolute; left:120px; top:700px; width:900px;">
+                <li>El obrero produce más valor del que recibe en salario.</li>
+                <li>Esa diferencia &mdash; la plusvalía &mdash; es la fuente clásica de la ganancia.</li>
+            </ul>
+        </div>
+        <div class="barchart reveal">
+            <div class="bar wage"><span class="bar-value">30%</span><span class="bar-label">Salario</span></div>
+            <div class="bar profit"><span class="bar-value">70%</span><span class="bar-label">Ganancia</span></div>
+        </div>
+        <div class="page-num">05 / 12</div>
+    </section>
+
+    <!-- SLIDE 6 — CIBERSOCIALISMO -->
+    <section class="slide" id="s6">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">Cibersocialismo</div>
+            <h2 class="slide-title reveal">Planificar sin<br>mercado</h2>
+            <ul class="bullets reveal" style="position:absolute; left:120px; top:700px; width:1150px;">
+                <li>Chile, 1971&ndash;73: <b>Project Cybersyn</b> (Stafford Beer) &mdash; control de la producción en tiempo real, sin precios de mercado.</li>
+                <li>Cockshott &amp; Cottrell: usar potencia de cómputo para calcular directamente en horas de trabajo.</li>
+                <li>La tesis: la computación puede reemplazar al mercado como mecanismo de coordinación.</li>
+            </ul>
+        </div>
+        <div class="reveal" style="position:absolute; right:150px; top:260px; transform:rotate(6deg);"><span class="stamp">Op. Cybersyn</span></div>
+        <div class="page-num">06 / 12</div>
+    </section>
+
+    <!-- SLIDE 7 — EL QUIEBRE (dark) -->
+    <section class="slide dark" id="s7">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">El quiebre</div>
+            <h2 class="slide-title reveal">La IA rompe<br>la ecuación<br><em>clásica</em></h2>
+            <ul class="bullets reveal" style="position:absolute; left:120px; top:700px; width:1200px;">
+                <li>Si el valor nace del trabajo humano, ¿qué pasa cuando la máquina hace el trabajo?</li>
+                <li>El costo marginal de producir ya no depende de horas humanas explotadas.</li>
+                <li>El excedente deja de extraerse <b>"del hombre."</b></li>
+            </ul>
+        </div>
+        <div class="page-num">07 / 12</div>
+    </section>
+
+    <!-- SLIDE 8 — ABARATAMIENTO -->
+    <section class="slide" id="s8">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">Consecuencia económica</div>
+            <h2 class="slide-title reveal">Los bienes se<br>abaratan cuando<br>el trabajo ya no<br>se <em>cobra</em></h2>
+        </div>
+        <div class="curve-wrap reveal">
+            <svg viewBox="0 0 400 320" fill="none">
+                <line x1="20" y1="20" x2="20" y2="300" stroke="#161310" stroke-width="6"/>
+                <line x1="20" y1="300" x2="390" y2="300" stroke="#161310" stroke-width="6"/>
+                <path d="M30 60 C 140 90, 230 220, 380 280" stroke="#B31E23" stroke-width="8" fill="none" stroke-linecap="round"/>
+                <text x="30" y="45" font-family="JetBrains Mono" font-size="18" fill="#161310">costo</text>
+                <text x="330" y="320" font-family="JetBrains Mono" font-size="18" fill="#161310">tiempo</text>
+            </svg>
+        </div>
+        <ul class="bullets reveal" style="position:absolute; left:120px; top:760px; width:1000px;">
+            <li>Menos trabajo humano incorporado &rarr; menor "valor" clásico &rarr; precios de producción a la baja.</li>
+            <li>El viejo cálculo capitalista (extraer plusvalía del obrero) pierde su objeto.</li>
+        </ul>
+        <div class="page-num">08 / 12</div>
+    </section>
+
+    <!-- SLIDE 9 — EL PROBLEMA REAL -->
+    <section class="slide" id="s9">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">El problema real</div>
+            <h2 class="slide-title reveal">Pero el relato<br>sobre la IA<br>no es <em>neutral</em></h2>
+            <ul class="bullets reveal" style="position:absolute; left:120px; top:700px; width:1250px;">
+                <li>¿La automatización se cuenta como "progreso que libera" o como "amenaza que despide"?</li>
+                <li>Cada medio narra la misma transición según a quién sirve el relato.</li>
+                <li>Medir ese sesgo exige el mismo marco: ¿de dónde viene el valor y quién lo narra?</li>
+            </ul>
+        </div>
+        <div class="page-num">09 / 12</div>
+    </section>
+
+    <!-- SLIDE 10 — BIAS SCRAPER -->
+    <section class="slide" id="s10">
+        <div class="grain"></div>
+        <div class="frame"></div>
+        <div class="content-slide">
+            <div class="kicker reveal">La herramienta</div>
+            <h2 class="slide-title reveal" style="font-size:76px;">BIAS Scraper: medir<br>el sesgo ideológico<br>en la prensa mexicana</h2>
+            <ul class="bullets reveal" style="position:absolute; left:120px; top:760px; width:1300px;">
+                <li>Pipeline KDD de 6 fases: scraping, limpieza, anotación, clasificación, evaluación, visualización.</li>
+                <li>Un clasificador aprende a distinguir encuadres ideológicos en la cobertura noticiosa.</li>
+                <li>La IA no es neutral por defecto &mdash; se audita con la misma teoría con la que auditamos al mercado.</li>
+            </ul>
+        </div>
+        <div class="reveal" style="position:absolute; right:150px; top:260px; transform:rotate(-6deg);"><span class="stamp">Proyecto&nbsp;/&nbsp;Tesis</span></div>
+        <div class="page-num">10 / 12</div>
+    </section>
+
+    <!-- SLIDE 11 — SÍNTESIS (poster, dark) -->
+    <section class="slide dark" id="s11">
+        <div class="grain"></div>
+        <div class="halftone" style="right:-100px; bottom:-120px; width:640px; height:640px; color:var(--cream);"></div>
+        <div class="frame"></div>
+        <div class="kicker reveal" style="position:absolute; top:132px; left:120px;">Síntesis &mdash; 11 / 12</div>
+        <h2 class="poster-title reveal">De la teoría del<br>valor a una<br>herramienta de <em>análisis</em></h2>
+        <p class="poster-sub reveal">Cibersocialismo y BIAS Scraper parten de la misma pregunta:<br>¿quién controla el relato del valor?</p>
+    </section>
+
+    <!-- SLIDE 12 — CIERRE -->
+    <section class="slide" id="s12">
+        <div class="grain"></div>
+        <div class="halftone" style="right:-120px; bottom:-140px; width:760px; height:760px;"></div>
+        <div class="frame"></div>
+        <div class="star-wrap reveal" style="position:absolute; top:110px; right:180px;"><div class="star"></div></div>
+        <h1 class="title reveal" style="position:absolute; left:104px; top:400px; width:1400px; font-family:var(--font-display); font-weight:900; font-size:150px; color:var(--ink); text-transform:uppercase; line-height:.9;">Gracias</h1>
+        <p class="subtitle reveal" style="position:absolute; left:110px; top:660px; width:1200px; font-family:var(--font-mono); font-size:34px; border-left:6px solid var(--red); padding-left:26px;">Preguntas</p>
+        <div class="footer reveal" style="position:absolute; left:110px; bottom:88px; font-family:var(--font-mono); font-size:17px; letter-spacing:.1em; color:var(--ink-soft); text-transform:uppercase;">Rubén Jiménez Navarro &nbsp;&mdash;&nbsp; <b style="color:var(--ink);">BIAS Scraper</b></div>
+        <div class="page-num">12 / 12</div>
+    </section>
+
+</main>
+</div>
+
+<div class="deck-controls">
+    <div class="progress-dots" id="progressDots"></div>
+</div>
+
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Modo edición (E)">✏️</button>
+<div class="save-toast" id="saveToast">Cambios guardados</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   =========================================== */
+class SlidePresentation{
+    constructor(){
+        this.slides = Array.from(document.querySelectorAll('.slide'));
+        this.currentSlide = 0;
+        this.stage = document.getElementById('deckStage');
+        this.dotsWrap = document.getElementById('progressDots');
+        this.buildDots();
+        this.setupStageScale();
+        this.setupKeyboardNav();
+        this.setupTouchNav();
+        this.setupWheelNav();
+        this.showSlide(0);
+    }
+    buildDots(){
+        this.slides.forEach((_, i) => {
+            const d = document.createElement('div');
+            d.className = 'dot' + (i === 0 ? ' active' : '');
+            d.addEventListener('click', () => this.showSlide(i));
+            this.dotsWrap.appendChild(d);
+        });
+    }
+    setupStageScale(){
+        const scale = () => {
+            const factor = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const x = (window.innerWidth - 1920 * factor) / 2;
+            const y = (window.innerHeight - 1080 * factor) / 2;
+            this.stage.style.transform = `translate(${x}px, ${y}px) scale(${factor})`;
+        };
+        scale();
+        window.addEventListener('resize', scale);
+    }
+    setupKeyboardNav(){
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement && document.activeElement.getAttribute('contenteditable') === 'true') return;
+            if (['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)){ e.preventDefault(); this.next(); }
+            if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){ e.preventDefault(); this.prev(); }
+        });
+    }
+    setupTouchNav(){
+        let startX = null;
+        this.stage.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, {passive:true});
+        this.stage.addEventListener('touchend', (e) => {
+            if (startX === null) return;
+            const dx = e.changedTouches[0].clientX - startX;
+            if (Math.abs(dx) > 50) dx < 0 ? this.next() : this.prev();
+            startX = null;
+        }, {passive:true});
+    }
+    setupWheelNav(){
+        let locked = false;
+        window.addEventListener('wheel', (e) => {
+            if (locked) return;
+            locked = true;
+            e.deltaY > 0 ? this.next() : this.prev();
+            setTimeout(() => locked = false, 700);
+        }, {passive:true});
+    }
+    next(){ this.showSlide(this.currentSlide + 1); }
+    prev(){ this.showSlide(this.currentSlide - 1); }
+    showSlide(index){
+        this.currentSlide = Math.max(0, Math.min(index, this.slides.length - 1));
+        this.slides.forEach((slide, i) => {
+            slide.classList.toggle('active', i === this.currentSlide);
+            slide.classList.toggle('visible', i === this.currentSlide);
+        });
+        Array.from(this.dotsWrap.children).forEach((d, i) => d.classList.toggle('active', i === this.currentSlide));
+    }
+}
+const presentation = new SlidePresentation();
+
+/* ===========================================
+   INLINE EDITING — hover hotzone (JS-based, 400ms grace)
+   =========================================== */
+class InlineEditor{
+    constructor(){
+        this.isActive = false;
+        this.toggle = document.getElementById('editToggle');
+        this.hotzone = document.getElementById('editHotzone');
+        this.toast = document.getElementById('saveToast');
+        this.editableSelector = '.slide h1, .slide h2, .slide p, .slide li, .slide span.stamp';
+        this.bindHover();
+        this.toggle.addEventListener('click', () => this.toggleEditMode());
+        this.hotzone.addEventListener('click', () => this.toggleEditMode());
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'e' || e.key === 'E') && !(document.activeElement && document.activeElement.getAttribute('contenteditable') === 'true')){
+                this.toggleEditMode();
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key === 's'){ e.preventDefault(); this.save(true); }
+        });
+        this.restore();
+    }
+    bindHover(){
+        let hideTimeout = null;
+        const show = () => { clearTimeout(hideTimeout); this.toggle.classList.add('show'); };
+        const scheduleHide = () => { hideTimeout = setTimeout(() => { if (!this.isActive) this.toggle.classList.remove('show'); }, 400); };
+        this.hotzone.addEventListener('mouseenter', show);
+        this.hotzone.addEventListener('mouseleave', scheduleHide);
+        this.toggle.addEventListener('mouseenter', show);
+        this.toggle.addEventListener('mouseleave', scheduleHide);
+    }
+    toggleEditMode(){
+        this.isActive = !this.isActive;
+        this.toggle.classList.toggle('active', this.isActive);
+        document.querySelectorAll(this.editableSelector).forEach(el => {
+            el.setAttribute('contenteditable', this.isActive ? 'true' : 'false');
+        });
+        if (!this.isActive) this.save();
+    }
+    save(showToast){
+        const data = {};
+        document.querySelectorAll('.slide').forEach(slide => {
+            data[slide.id] = slide.innerHTML;
+        });
+        try{ localStorage.setItem('deck_cibersocialismo_ia', JSON.stringify(data)); }catch(e){}
+        if (showToast) this.showToast();
+    }
+    restore(){
+        try{
+            const raw = localStorage.getItem('deck_cibersocialismo_ia');
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            Object.keys(data).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = data[id];
+            });
+        }catch(e){}
+    }
+    showToast(){
+        this.toast.classList.add('show');
+        setTimeout(() => this.toast.classList.remove('show'), 1600);
+    }
+}
+new InlineEditor();
+</script>
+</body>
+</html>

@@ -69,6 +69,7 @@ router.get("/oraciones", async (req, res) => {
         WHERE anotador_id = $1 AND version = 1
       )
       AND (o.compleja IS NULL OR o.compleja = FALSE)
+      AND (o.descartada IS NULL OR o.descartada = FALSE)
       ORDER BY MD5(a.id::text), o.posicion
       LIMIT $2
     `, [anotador_id, parseInt(limite)]);
@@ -96,6 +97,7 @@ router.get("/stats/:anotador_id", async (req, res) => {
       pool.query(`
         SELECT COUNT(*) AS total FROM oraciones
         WHERE (compleja IS NULL OR compleja = FALSE)
+          AND (descartada IS NULL OR descartada = FALSE)
       `),
     ]);
     res.json({
@@ -168,22 +170,38 @@ router.post("/anotar", async (req, res) => {
 });
 
 // ── GET /api/anotacion/lexicon ────────────────────────────────
+// Lexicón separado en dos tablas:
+// - sesgo (tipo B y C): pares elemento/alternativa del lexicón valente MX
+// - facticidad (tipo A): inventario de elementos factuales por subtipo
 router.get("/lexicon", async (req, res) => {
   try {
     const { tipo } = req.query;
-    const params = tipo ? [tipo] : [];
-    const where  = tipo ? "WHERE es.tipo = $1" : "";
+
+    // Construcción dinámica del WHERE según el filtro
+    const whereClause = tipo ? `WHERE es.tipo = '${tipo}'` : "";
+
     const result = await pool.query(`
-      SELECT es.elemento, es.alternativa, es.tipo, es.subtipo,
-             COUNT(*) AS frecuencia,
-             COUNT(DISTINCT an.anotador_id) AS anotadores
+      SELECT
+        es.elemento,
+        es.alternativa,
+        es.tipo,
+        es.subtipo,
+        COUNT(*)                         AS frecuencia,
+        COUNT(DISTINCT an.anotador_id)   AS anotadores
       FROM elementos_sesgo es
       JOIN anotaciones an ON an.id = es.anotacion_id
-      ${where}
+      ${whereClause}
       GROUP BY es.elemento, es.alternativa, es.tipo, es.subtipo
-      ORDER BY frecuencia DESC, es.elemento
-    `, params);
-    res.json(result.rows);
+      ORDER BY es.tipo, frecuencia DESC, es.elemento
+    `);
+
+    // Separar en dos grupos para que el frontend los maneje correctamente:
+    // - "sesgo": elementos B y C → el lexicón valente (pares con alternativa)
+    // - "facticidad": elementos A → inventario factual (sin alternativa)
+    const sesgo      = result.rows.filter(r => r.tipo === "B" || r.tipo === "C");
+    const facticidad = result.rows.filter(r => r.tipo === "A");
+
+    res.json({ sesgo, facticidad, total: result.rows.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -246,6 +264,109 @@ router.get("/kappa", async (req, res) => {
   }
 });
 
+// ── GET /api/anotacion/banco ─────────────────────────────────
+// Lista paginada y filtrable de anotaciones ya hechas — para el
+// Banco de Anotaciones (revisión + edición + borrado).
+router.get("/banco", async (req, res) => {
+  try {
+    const {
+      anotador_id, categoria, confianza, q,
+      pagina = 1, limite = 30,
+    } = req.query;
+
+    const where  = ["an.version = 1"];
+    const params = [];
+
+    if (anotador_id) { params.push(anotador_id); where.push(`an.anotador_id = $${params.length}`); }
+    if (categoria)   { params.push(categoria);    where.push(`an.categoria = $${params.length}`); }
+    if (confianza)   { params.push(confianza);    where.push(`an.confianza = $${params.length}`); }
+    if (q?.trim())   { params.push(`%${q.trim()}%`); where.push(`o.texto ILIKE $${params.length}`); }
+
+    const whereSql = `WHERE ${where.join(" AND ")}`;
+    const limiteN  = Math.min(100, Math.max(1, parseInt(limite) || 30));
+    const paginaN  = Math.max(1, parseInt(pagina) || 1);
+    const offset   = (paginaN - 1) * limiteN;
+
+    const totalResult = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM anotaciones an
+      JOIN oraciones o ON o.id = an.oracion_id
+      ${whereSql}
+    `, params);
+    const total = parseInt(totalResult.rows[0].total);
+
+    const filasResult = await pool.query(`
+      SELECT
+        an.id, an.oracion_id, an.categoria, an.confianza, an.notas,
+        an.es_consenso, an.creado_en,
+        an.anotador_id, ad.nombre AS anotador_nombre,
+        o.texto,
+        f.nombre AS fuente, ev.titular_evento
+      FROM anotaciones an
+      JOIN anotadores ad ON ad.id = an.anotador_id
+      JOIN oraciones  o  ON o.id  = an.oracion_id
+      JOIN articulos  art ON art.id = o.articulo_id
+      JOIN fuentes    f  ON f.id  = art.fuente_id
+      JOIN eventos    ev ON ev.id = art.evento_id
+      ${whereSql}
+      ORDER BY an.creado_en DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `, [...params, limiteN, offset]);
+
+    const anotacionIds = filasResult.rows.map(r => r.id);
+    let elementosPorAnotacion = {};
+
+    if (anotacionIds.length) {
+      const elResult = await pool.query(`
+        SELECT id, anotacion_id, elemento, alternativa, tipo, subtipo
+        FROM elementos_sesgo
+        WHERE anotacion_id = ANY($1)
+        ORDER BY anotacion_id, id
+      `, [anotacionIds]);
+      elementosPorAnotacion = elResult.rows.reduce((acc, el) => {
+        (acc[el.anotacion_id] ||= []).push(el);
+        return acc;
+      }, {});
+    }
+
+    res.json({
+      total,
+      pagina:        paginaN,
+      limite:        limiteN,
+      total_paginas: Math.max(1, Math.ceil(total / limiteN)),
+      anotaciones: filasResult.rows.map(r => ({
+        ...r,
+        elementos: elementosPorAnotacion[r.id] || [],
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/anotacion/:id ────────────────────────────────
+// Borra una anotación (y sus elementos, por ON DELETE CASCADE).
+// Requiere ?anotador_id= que coincida con el dueño de la anotación —
+// mismo modelo de confianza que el resto de la app (sin login real).
+router.delete("/:id", async (req, res) => {
+  try {
+    const { anotador_id } = req.query;
+    if (!anotador_id)
+      return res.status(400).json({ error: "anotador_id requerido" });
+
+    const result = await pool.query(`
+      DELETE FROM anotaciones WHERE id = $1 AND anotador_id = $2 RETURNING id
+    `, [req.params.id, anotador_id]);
+
+    if (!result.rows.length)
+      return res.status(403).json({ error: "No se pudo eliminar: no es tuya o no existe" });
+
+    res.json({ ok: true, id: result.rows[0].id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── PUT /api/anotacion/oraciones/:id/compleja ────────────────
 router.put("/oraciones/:id/compleja", async (req, res) => {
   try {
@@ -253,6 +374,21 @@ router.put("/oraciones/:id/compleja", async (req, res) => {
     const result = await pool.query(`
       UPDATE oraciones SET compleja = $1 WHERE id = $2 RETURNING id, compleja
     `, [compleja, req.params.id]);
+    if (!result.rows.length)
+      return res.status(404).json({ error: "Oración no encontrada" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PUT /api/anotacion/oraciones/:id/descartada ─────────────
+router.put("/oraciones/:id/descartada", async (req, res) => {
+  try {
+    const { descartada = true } = req.body;
+    const result = await pool.query(`
+      UPDATE oraciones SET descartada = $1 WHERE id = $2 RETURNING id, descartada
+    `, [descartada, req.params.id]);
     if (!result.rows.length)
       return res.status(404).json({ error: "Oración no encontrada" });
     res.json(result.rows[0]);

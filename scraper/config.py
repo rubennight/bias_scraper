@@ -5,25 +5,49 @@
 # =============================================================
 
 # Medios mexicanos con su orientación ideológica
+# Total: 19 fuentes — 10 nacionales + 9 regionales
 FUENTES = [
+    # ── Nacionales ────────────────────────────────────────────
     # Izquierda
-    {"nombre": "La Jornada",        "url_base": "https://www.jornada.com.mx",        "orientacion": "izquierda"},
-    {"nombre": "El Informador",     "url_base": "https://www.informador.mx",          "orientacion": "izquierda"},
+    {"nombre": "La Jornada",          "url_base": "https://www.jornada.com.mx",            "orientacion": "izquierda"},
+    {"nombre": "El Informador",       "url_base": "https://www.informador.mx",              "orientacion": "izquierda"},
     # Crítico / independiente
-    {"nombre": "Aristegui Noticias","url_base": "https://aristeguinoticias.com",      "orientacion": "critico"},
-    {"nombre": "El Financiero",     "url_base": "https://www.elfinanciero.com.mx",    "orientacion": "critico"},
+    {"nombre": "Aristegui Noticias",  "url_base": "https://aristeguinoticias.com",          "orientacion": "critico"},
+    {"nombre": "El Financiero",       "url_base": "https://www.elfinanciero.com.mx",        "orientacion": "critico"},
     # Centro
-    {"nombre": "Animal Político",   "url_base": "https://politica.expansion.mx",     "orientacion": "centro"},
-    {"nombre": "El Universal",      "url_base": "https://www.eluniversal.com.mx",     "orientacion": "centro"},
+    {"nombre": "Animal Político",     "url_base": "https://politica.expansion.mx",         "orientacion": "centro"},
+    {"nombre": "El Universal",        "url_base": "https://www.eluniversal.com.mx",         "orientacion": "centro"},
+    {"nombre": "Excelsior",           "url_base": "https://www.excelsior.com.mx",           "orientacion": "centro"},
+    {"nombre": "SDP Noticias",        "url_base": "https://www.sdpnoticias.com",            "orientacion": "centro"},
+    # Centro-derecha
+    {"nombre": "Reforma",             "url_base": "https://www.reforma.com",                "orientacion": "centro-derecha"},
     # Derecha
-    {"nombre": "24 Horas",          "url_base": "https://www.24-horas.mx",           "orientacion": "derecha"},
-    {"nombre": "El Norte",          "url_base": "https://www.elnorte.com",           "orientacion": "derecha"},
+    {"nombre": "24 Horas",            "url_base": "https://www.24-horas.mx",                "orientacion": "derecha"},
+    {"nombre": "El Norte",            "url_base": "https://www.elnorte.com",                "orientacion": "derecha"},
+
+    # ── Regionales ────────────────────────────────────────────
+    # Noreste — Coahuila / La Laguna
+    {"nombre": "Vanguardia MX",       "url_base": "https://vanguardia.com.mx",              "orientacion": "regional", "region": "noreste",     "estado": "Coahuila"},
+    {"nombre": "El Siglo de Torreon", "url_base": "https://www.elsiglodetorreon.com.mx",    "orientacion": "regional", "region": "noreste",     "estado": "Coahuila"},
+    # Occidente — Jalisco
+    {"nombre": "Mural Guadalajara",   "url_base": "https://www.mural.com.mx",               "orientacion": "regional", "region": "occidente",   "estado": "Jalisco"},
+    # Noroeste — Sonora
+    {"nombre": "El Imparcial Sonora", "url_base": "https://www.elimparcial.com",            "orientacion": "regional", "region": "noroeste",    "estado": "Sonora"},
+    # Norte-Centro — Zacatecas
+    {"nombre": "Zacatecas Online",    "url_base": "https://zacatecasonline.com.mx",          "orientacion": "regional", "region": "norte-centro","estado": "Zacatecas"},
+    # Sureste — Yucatán
+    {"nombre": "Diario de Yucatan",   "url_base": "https://www.yucatan.com.mx",              "orientacion": "regional", "region": "sureste",     "estado": "Yucatan"},
+    # Sureste — Oaxaca
+    {"nombre": "El Imparcial Oaxaca", "url_base": "https://imparcialoaxaca.mx",              "orientacion": "regional", "region": "sureste",     "estado": "Oaxaca"},
+    # Sureste — Chiapas
+    {"nombre": "Expreso Chiapas",     "url_base": "https://expresochiapas.com",              "orientacion": "regional", "region": "sureste",     "estado": "Chiapas"},
 ]
 
 # =============================================================
 # RSS POR SECCIONES TEMÁTICAS
 # =============================================================
 RSS_FEEDS = {
+    # ── Nacionales ────────────────────────────────────────────
     "La Jornada": [
         "https://www.jornada.com.mx/rss/politica.xml",
         "https://www.jornada.com.mx/rss/economia.xml",
@@ -46,11 +70,46 @@ RSS_FEEDS = {
     "El Universal": [
         "https://www.eluniversal.com.mx/arc/outboundfeeds/rss/?outputType=xml",
     ],
+    "Excelsior": [
+        "https://www.excelsior.com.mx/rss/feed",
+    ],
+    "SDP Noticias": [
+        "https://feeds.sdpnoticias.com/portal/all",
+    ],
+    "Reforma": [
+        "https://www.reforma.com/rss/portada.xml",
+    ],
     "24 Horas": [
         "https://www.24-horas.mx/feed",
     ],
     "El Norte": [
         "https://www.elnorte.com/rss/portada.xml",
+    ],
+
+    # ── Regionales ────────────────────────────────────────────
+    "Vanguardia MX": [
+        "https://vanguardia.com.mx/rss.xml",
+    ],
+    "El Siglo de Torreon": [
+        "https://www.elsiglodetorreon.com.mx/index.xml",
+    ],
+    "Mural Guadalajara": [
+        "https://www.mural.com.mx/rss/portada.xml",
+    ],
+    "El Imparcial Sonora": [
+        "https://www.elimparcial.com/rss/feed.xml",
+    ],
+    "Zacatecas Online": [
+        "https://zacatecasonline.com.mx/feed/",
+    ],
+    "Diario de Yucatan": [
+        "https://www.yucatan.com.mx/feed",
+    ],
+    "El Imparcial Oaxaca": [
+        "https://imparcialoaxaca.mx/feed",
+    ],
+    "Expreso Chiapas": [
+        "https://expresochiapas.com/noticias/feed/",
     ],
 }
 
@@ -63,7 +122,7 @@ PALABRAS_RELEVANTES = [
     "senado", "diputados", "secretar", "partido", "elección", "reforma",
     "morena", "gobernador", "alcalde", "legislat", "decreto", "mañanera",
     "gabinete", "ministro", "ministra", "tribunal", "corte", "juez",
-    "rocha", "sinaloa", "cartel", "fiscalía", "fgr", "harfuch",
+    "sinaloa", "cartel", "fiscalía", "fgr", "harfuch",
     # Seguridad
     "violencia", "homicidio", "feminicidio", "crimen", "narco",
     "desaparec", "masacre", "ejército", "guardia nacional", "detenid",
@@ -75,7 +134,8 @@ PALABRAS_RELEVANTES = [
     # Geopolítica
     "trump", "estados unidos", "migraci", "deportaci", "frontera",
     "china", "rusia", "guerra", "sanción", "diplomát", "embajad",
-    "t-mec", "relaciones exteriores",  "ucrania", "venezuela", "israel", "líbano","washington",
+    "t-mec", "relaciones exteriores", "ucrania", "venezuela",
+    "israel", "líbano", "washington", "irán",
     # Justicia
     "sentencia", "amparo", "derechos humanos", "presos", "corrupción",
     "impunidad", "acusado", "fallo", "resolución", "poder judicial",
@@ -83,7 +143,7 @@ PALABRAS_RELEVANTES = [
 
 PALABRAS_EXCLUIR = [
     # Deportes
-    "vs ", "en vivo", "liga mx", "fútbol", "futbol", "gol", "partido",
+    "vs ", "en vivo", "liga mx", "fútbol", "futbol", "gol",
     "torneo", "champions", "nfl", "nba", "mlb", "f1", "gp de", "grand prix",
     "premier league", "semifinal", "cuartos de final", "portero", "delantero",
     "tigres", "chivas", "américa", "pumas", "cruz azul", "rayados",
@@ -104,17 +164,13 @@ PALABRAS_EXCLUIR = [
 # KDD Fase 1 — Selección
 # HORAS_ANTIGUEDAD: usado por scraper.py para descartar artículos
 # muy viejos al momento de extraer el cuerpo completo.
-# Se mantiene independiente de DIAS_VENTANA.
 HORAS_ANTIGUEDAD = 48
 
 # KDD Fase 3 — Ventana temporal del clustering
 # Se usan semanas ISO (lunes → domingo) calculadas desde la
 # fecha_pub del artículo, NO desde la fecha de ejecución del pipeline.
-# Esto evita solapamiento entre ejecuciones consecutivas — múltiples
-# corridas en la misma semana ISO siempre producen la misma ventana.
-# Sustento empírico: análisis del corpus mostró que el 74% de los
-# artículos recuperables por RSS tienen fecha del día de ejecución,
-# con un rango real de 3-4 días (Barbaresi, 2021; observación propia).
+# Sustento empírico: 74% de los artículos RSS tienen fecha del día
+# de ejecución, rango real de 3-4 días (Barbaresi, 2021).
 USAR_SEMANAS_ISO = True
 
 # KDD Fase 3 — Clustering por keywords

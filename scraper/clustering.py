@@ -30,9 +30,18 @@ log = logging.getLogger(__name__)
 
 STOPWORDS_KEYWORDS = {
     "méxico", "mexico", "nacional", "gobierno", "federal",
-    "president", "presidenta", "nuevo", "nueva", "hoy",
+    "president", "presidente", "presidenta", "nuevo", "nueva", "hoy",
     "año", "dice", "dijo", "señaló", "informó", "según",
     "durante", "tras", "ante", "sobre", "caso", "vez",
+    # Nombres/lugares genéricos que aparecen en decenas de notas
+    # geopolíticas distintas en la misma semana — no identifican un
+    # evento específico, solo que "hay algo sobre Trump/EU". Sin
+    # este filtro, un artículo-puente que menciona a Trump de pasada
+    # puede compartir ≥ MIN_KEYWORDS_COMPARTIDAS con dos eventos
+    # completamente distintos y fusionarlos por transitividad en el
+    # BFS (ver evento #131, ago 2026: Andy López Beltrán + Irán/Omán
+    # terminaron en el mismo cluster por esta razón).
+    "trump", "donald", "unidos", "washington",
 }
 
 

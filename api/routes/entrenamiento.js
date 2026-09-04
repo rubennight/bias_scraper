@@ -8,18 +8,40 @@ const path    = require("path");
 const SCRAPER_DIR    = path.join(__dirname, "..", "..", "scraper");
 const PYTHON_CMD     = process.platform === "win32" ? "python" : "python3";
 const MIN_ORACIONES  = 300;
+const MIN_SUBTIPO    = 30;
+
+// Subtipos válidos por tipo de elemento — ver elementos_sesgo.subtipo CHECK.
+// Fuente de verdad para inicializar subtipos_detalle en 0 aunque el
+// corpus todavía no tenga ningún elemento de ese subtipo.
+const SUBTIPOS_POR_TIPO = {
+  A: ["accion", "declaracion", "cifra", "historico", "legal"],
+  B: ["lexical", "metafora", "epistemico", "omision", "encuadre"],
+  C: ["lexical", "metafora", "epistemico", "omision", "encuadre"],
+};
 
 // ── GET /api/entrenamiento/dataset ───────────────────────────
-// Estado actual del dataset — cuántas oraciones hay por categoría
 router.get("/dataset", async (req, res) => {
   try {
-    const [totales, porCategoria, kappa] = await Promise.all([
+    const [totales, porCategoria, porElemento, kappa] = await Promise.all([
       pool.query("SELECT COUNT(*) AS total FROM oraciones"),
+
+      // Métrica 1 — oraciones por categoría dominante (para entrenamiento)
       pool.query(`
         SELECT categoria, COUNT(*) AS total
         FROM anotaciones WHERE version = 1
         GROUP BY categoria ORDER BY categoria
       `),
+
+      // Métrica 2 — elementos por tipo y subtipo (para lexicón y features)
+      pool.query(`
+        SELECT es.tipo, es.subtipo, COUNT(*) AS total
+        FROM elementos_sesgo es
+        JOIN anotaciones an ON an.id = es.anotacion_id
+        WHERE an.version = 1
+        GROUP BY es.tipo, es.subtipo
+        ORDER BY es.tipo, es.subtipo
+      `),
+
       pool.query(`
         SELECT kappa_global, valido, calculado_en
         FROM sesiones_kappa
@@ -34,19 +56,67 @@ router.get("/dataset", async (req, res) => {
     const minPorCat     = Math.min(cats.A, cats.B, cats.C);
     const listo         = minPorCat >= MIN_ORACIONES;
 
+    // Elementos agrupados por tipo → subtipo
+    const elementos = { A: {}, B: {}, C: {} };
+    porElemento.rows.forEach(r => {
+      const tipo    = r.tipo;
+      const subtipo = r.subtipo || "sin_subtipo";
+      if (!elementos[tipo]) elementos[tipo] = {};
+      elementos[tipo][subtipo] = parseInt(r.total);
+    });
+
+    // Total de elementos por tipo
+    const totalElementos = {
+      A: Object.values(elementos.A || {}).reduce((s, v) => s + v, 0),
+      B: Object.values(elementos.B || {}).reduce((s, v) => s + v, 0),
+      C: Object.values(elementos.C || {}).reduce((s, v) => s + v, 0),
+    };
+
+    // Detalle por subtipo: cuenta + si alcanza MIN_SUBTIPO, inicializado
+    // en 0 para los 15 subtipos aunque el corpus no tenga elementos aún.
+    const subtiposDetalle = { A: {}, B: {}, C: {} };
+    let subtiposSuficientes = true;
+    for (const tipo of ["A", "B", "C"]) {
+      for (const sub of SUBTIPOS_POR_TIPO[tipo]) {
+        const total = (elementos[tipo] && elementos[tipo][sub]) || 0;
+        const suficiente = total >= MIN_SUBTIPO;
+        subtiposDetalle[tipo][sub] = { total, suficiente };
+        if (!suficiente) subtiposSuficientes = false;
+      }
+    }
+
+    // Estado de entrenamiento en tres niveles (ver bitácora del cambio):
+    //   "anotando" → alguna categoría dominante < MIN_ORACIONES
+    //   "base"     → las 3 categorías cumplen, pero algún subtipo < MIN_SUBTIPO
+    //   "completo" → todo cumple, las 41 features (26 + 15 de subtipos) están listas
+    const estadoEntrenamiento = !listo ? "anotando" : (subtiposSuficientes ? "completo" : "base");
+    const featuresDisponibles = estadoEntrenamiento === "completo" ? 41 : 26;
+
     res.json({
-      total_oraciones:  parseInt(totales.rows[0].total),
-      total_anotadas:   totalAnotadas,
-      por_categoria:    cats,
-      min_requerido:    MIN_ORACIONES,
-      min_por_categoria: minPorCat,
-      listo_para_entrenar: listo,
+      total_oraciones:      parseInt(totales.rows[0].total),
+      total_anotadas:       totalAnotadas,
+      por_categoria:        cats,
+      min_requerido:        MIN_ORACIONES,
+      min_por_categoria:    minPorCat,
+      listo_para_entrenar:  listo,
       faltante: {
         A: Math.max(0, MIN_ORACIONES - cats.A),
         B: Math.max(0, MIN_ORACIONES - cats.B),
         C: Math.max(0, MIN_ORACIONES - cats.C),
       },
-      ultimo_kappa: kappa.rows[0] || null,
+      // Nuevas métricas de elementos
+      elementos_por_tipo:    totalElementos,
+      elementos_por_subtipo: elementos,
+      ultimo_kappa:          kappa.rows[0] || null,
+
+      // Umbrales de subtipos (features de elementos, 15 de las 41 totales)
+      min_por_subtipo:       MIN_SUBTIPO,
+      subtipos_suficientes:  subtiposSuficientes,
+      subtipos_detalle:      subtiposDetalle,
+
+      // Estado de entrenamiento en tres niveles
+      estado_entrenamiento:  estadoEntrenamiento,
+      features_disponibles:  featuresDisponibles,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

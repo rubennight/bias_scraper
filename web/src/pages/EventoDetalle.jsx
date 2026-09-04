@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getEvento, anotarArticulo } from "../api";
+import { getEvento, anotarArticulo, getActoresEvento } from "../api";
 
 const ORDER = [
   { k: "izquierda", lab: "Izquierda" },
@@ -14,6 +14,158 @@ function fmtFecha(str) {
   return new Date(str).toLocaleDateString("es-MX", {
     day: "2-digit", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit",
   });
+}
+
+const TIPO_LABEL = { PER: "Personas", ORG: "Instituciones", LOC: "Lugares" };
+const TIPO_COLOR = { PER: "#C0392B", ORG: "#2e7d32", LOC: "#c89a2e" };
+const TIPO_BG    = { PER: "#fdf0ea", ORG: "#eef5ec", LOC: "#fef9ec" };
+const ROL_LABEL  = { citado: "citado", sujeto: "sujeto", mencionado: "menc." };
+
+function ActorChip({ actor }) {
+  const [open, setOpen] = useState(false);
+  const fuentes = typeof actor.fuentes_mencionan === "string"
+    ? JSON.parse(actor.fuentes_mencionan)
+    : actor.fuentes_mencionan || [];
+  const roles = typeof actor.roles === "string"
+    ? JSON.parse(actor.roles)
+    : actor.roles || {};
+  const rolPrincipal = Object.entries(roles).sort((x, y) => y[1] - x[1])[0];
+  const color = TIPO_COLOR[actor.tipo];
+
+  return (
+    <div
+      onClick={() => setOpen(!open)}
+      style={{
+        display: "inline-flex", flexDirection: "column",
+        border: `1px solid ${open ? color : "var(--rule)"}`,
+        borderRadius: 20,
+        background: open ? TIPO_BG[actor.tipo] : "transparent",
+        cursor: "pointer",
+        transition: "all .15s",
+        overflow: "hidden",
+      }}
+    >
+      {/* chip principal */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "6px 14px 6px 10px",
+      }}>
+        <div style={{
+          width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+          background: color,
+        }} />
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap" }}>
+          {actor.nombre_normalizado}
+        </span>
+        <span style={{
+          fontSize: 10, color: "var(--ink-3)",
+          fontWeight: 600, fontVariantNumeric: "tabular-nums",
+        }}>
+          {actor.total_menciones}
+        </span>
+        {actor.num_fuentes > 1 && (
+          <span style={{
+            fontSize: 9.5, padding: "1px 6px",
+            background: color, color: "#fff",
+            borderRadius: 10, fontWeight: 700,
+          }}>
+            {actor.num_fuentes}f
+          </span>
+        )}
+      </div>
+
+      {/* detalle expandido */}
+      {open && (
+        <div style={{
+          padding: "0 14px 8px",
+          display: "flex", flexWrap: "wrap", gap: 4,
+          alignItems: "center",
+        }}>
+          {rolPrincipal && (
+            <span style={{
+              fontSize: 10, padding: "1px 7px",
+              background: "var(--paper-2)", borderRadius: 10,
+              color: "var(--ink-3)", fontWeight: 600,
+            }}>
+              {ROL_LABEL[rolPrincipal[0]] || rolPrincipal[0]}
+            </span>
+          )}
+          {fuentes.map(f => (
+            <span key={f} style={{
+              fontSize: 9.5, padding: "1px 6px",
+              border: "1px solid var(--rule)", borderRadius: 10,
+              color: "var(--ink-3)", whiteSpace: "nowrap",
+            }}>{f}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActoresPanel({ eventoId }) {
+  const [actores, setActores]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [filtro, setFiltro]       = useState(null);
+
+  useEffect(() => {
+    getActoresEvento(eventoId, { limit: 30 })
+      .then(r => setActores(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [eventoId]);
+
+  if (loading) return null;
+  if (!actores.length) return null;
+
+  const tipos = [...new Set(actores.map(a => a.tipo))];
+  const filtrados = filtro ? actores.filter(a => a.tipo === filtro) : actores;
+
+  return (
+    <>
+      <div className="sec-head" style={{ marginTop: 36, marginBottom: 18 }}>
+        <span className="sec-num">03</span>
+        <h2 className="sec-title" style={{ fontSize: 22 }}>Actores del <em>evento</em></h2>
+        <span className="sec-meta">{actores.length} identificados</span>
+      </div>
+
+      {/* filtros por tipo */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        <button
+          onClick={() => setFiltro(null)}
+          style={{
+            fontSize: 11, fontWeight: 600, fontFamily: "inherit",
+            padding: "5px 14px", borderRadius: 20,
+            border: `1px solid ${!filtro ? "var(--ink)" : "var(--rule)"}`,
+            background: !filtro ? "var(--ink)" : "transparent",
+            color: !filtro ? "var(--paper)" : "var(--ink-3)",
+            cursor: "pointer", transition: "all .15s",
+          }}
+        >Todos</button>
+        {tipos.map(t => (
+          <button
+            key={t}
+            onClick={() => setFiltro(filtro === t ? null : t)}
+            style={{
+              fontSize: 11, fontWeight: 600, fontFamily: "inherit",
+              padding: "5px 14px", borderRadius: 20,
+              border: `1px solid ${filtro === t ? TIPO_COLOR[t] : "var(--rule)"}`,
+              background: filtro === t ? TIPO_COLOR[t] : "transparent",
+              color: filtro === t ? "#fff" : "var(--ink-3)",
+              cursor: "pointer", transition: "all .15s",
+            }}
+          >{TIPO_LABEL[t]}</button>
+        ))}
+      </div>
+
+      {/* chips de actores */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {filtrados.slice(0, 20).map(a => (
+          <ActorChip key={a.id} actor={a} />
+        ))}
+      </div>
+    </>
+  );
 }
 
 function ArticuloItem({ art, onAnotar }) {
@@ -202,6 +354,8 @@ export default function EventoDetalle() {
             </div>
           </>
         )}
+
+        <ActoresPanel eventoId={evento.id} />
       </section>
 
       {/* COLUMNAS */}
@@ -214,7 +368,7 @@ export default function EventoDetalle() {
         <>
           <div style={{ padding: "36px 64px 0" }}>
             <div className="sec-head" style={{ paddingBottom: 24, borderBottom: "1px solid var(--rule)", marginBottom: 0 }}>
-              <span className="sec-num">03</span>
+              <span className="sec-num">04</span>
               <h2 className="sec-title">Cobertura por <em>orientación</em></h2>
               <span className="sec-meta">{evento.num_fuentes} fuentes · {totalArticulos} artículos</span>
             </div>

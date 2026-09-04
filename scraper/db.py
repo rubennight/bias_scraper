@@ -4,6 +4,7 @@
 # Schema: fuentes → eventos → articulos → articulo_keywords
 #         → oraciones → anotaciones ← anotadores
 #         → sesiones_kappa
+#         → actores_evento → menciones_actor
 # =============================================================
 
 import os
@@ -29,7 +30,7 @@ def get_connection():
 
 def crear_tablas():
     """
-    Crea las 8 tablas si no existen.
+    Crea las 10 tablas si no existen.
     Seguro de ejecutar múltiples veces — no borra datos existentes.
 
     Esquema KDD completo:
@@ -47,7 +48,9 @@ def crear_tablas():
             id          SERIAL PRIMARY KEY,
             nombre      TEXT NOT NULL UNIQUE,
             url_base    TEXT NOT NULL,
-            orientacion TEXT NOT NULL
+            orientacion TEXT NOT NULL,
+            region      TEXT,   -- noroeste, norte-centro, sureste, etc.
+            estado      TEXT    -- Sonora, Zacatecas, Yucatan, Oaxaca, etc.
         );
 
         CREATE TABLE IF NOT EXISTS eventos (
@@ -94,6 +97,8 @@ def crear_tablas():
             contexto_sig  TEXT,
             posicion      INT NOT NULL,
             num_palabras  INT,
+            compleja      BOOLEAN DEFAULT FALSE,
+            descartada    BOOLEAN DEFAULT FALSE,
             creado_en     TIMESTAMP DEFAULT NOW()
         );
 
@@ -143,6 +148,38 @@ def crear_tablas():
             notas           TEXT,
             calculado_en    TIMESTAMP DEFAULT NOW()
         );
+
+        -- ── ACTORES: entidades relevantes por evento ─────────
+
+        CREATE TABLE IF NOT EXISTS actores_evento (
+            id                  SERIAL PRIMARY KEY,
+            evento_id           INT REFERENCES eventos(id) ON DELETE CASCADE,
+            nombre_normalizado  TEXT NOT NULL,
+            tipo                TEXT NOT NULL CHECK (tipo IN ('PER','ORG','LOC')),
+            cargo               TEXT,
+            total_menciones     INT DEFAULT 0,
+            num_fuentes         INT DEFAULT 0,
+            creado_en           TIMESTAMP DEFAULT NOW(),
+            UNIQUE(evento_id, nombre_normalizado, tipo)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_actores_evento
+            ON actores_evento(evento_id);
+
+        CREATE TABLE IF NOT EXISTS menciones_actor (
+            id          SERIAL PRIMARY KEY,
+            actor_id    INT REFERENCES actores_evento(id) ON DELETE CASCADE,
+            oracion_id  INT REFERENCES oraciones(id) ON DELETE CASCADE,
+            fuente_id   INT REFERENCES fuentes(id),
+            texto_mencion TEXT NOT NULL,
+            rol         TEXT CHECK (rol IN ('citado','mencionado','sujeto')),
+            creado_en   TIMESTAMP DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_menciones_actor
+            ON menciones_actor(actor_id);
+        CREATE INDEX IF NOT EXISTS idx_menciones_oracion
+            ON menciones_actor(oracion_id);
     """
     conn = get_connection()
     cur  = conn.cursor()
@@ -156,16 +193,27 @@ def crear_tablas():
 def insertar_fuentes(fuentes: list):
     """
     Inserta los medios definidos en config.py.
-    ON CONFLICT DO NOTHING = si ya existe por nombre, no hace nada.
+    ON CONFLICT DO UPDATE = actualiza region y estado si ya existe.
+    Soporta campos opcionales: region, estado.
     """
     conn = get_connection()
     cur  = conn.cursor()
     for f in fuentes:
         cur.execute("""
-            INSERT INTO fuentes (nombre, url_base, orientacion)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (nombre) DO NOTHING;
-        """, (f["nombre"], f["url_base"], f["orientacion"]))
+            INSERT INTO fuentes (nombre, url_base, orientacion, region, estado)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (nombre) DO UPDATE SET
+                url_base    = EXCLUDED.url_base,
+                orientacion = EXCLUDED.orientacion,
+                region      = EXCLUDED.region,
+                estado      = EXCLUDED.estado;
+        """, (
+            f["nombre"],
+            f["url_base"],
+            f["orientacion"],
+            f.get("region"),
+            f.get("estado"),
+        ))
     conn.commit()
     cur.close()
     conn.close()
@@ -265,23 +313,38 @@ def obtener_fuentes() -> list:
 
 def obtener_evento_id_por_urls(urls: list) -> int | None:
     """
-    Busca si alguna URL del cluster ya está en la BD con un evento_id.
-    Si existe, retorna ese evento_id para que los artículos nuevos del
-    mismo cluster se agreguen al evento existente en lugar de crear uno
-    duplicado en re-ejecuciones de la misma semana.
+    Busca si este cluster ya está asociado a un evento existente en la BD.
+
+    Requiere al menos 2 coincidencias con el MISMO evento (o que el
+    cluster entero sea más chico que eso) para reusarlo — una sola URL
+    compartida no es suficiente evidencia. Un artículo "puente" con
+    keywords genéricas puede colarse en un cluster de otro tema en una
+    re-ejecución posterior y, si bastara con 1 coincidencia, arrastraría
+    TODO ese cluster nuevo hacia el evento viejo aunque no tengan
+    relación real (ver evento #131, ago 2026, donde así se fusionaron
+    Andy López Beltrán con Irán/Omán a lo largo de tres corridas).
     """
     if not urls:
         return None
     conn = get_connection()
     cur  = conn.cursor()
-    cur.execute(
-        "SELECT evento_id FROM articulos WHERE url = ANY(%s) AND evento_id IS NOT NULL LIMIT 1;",
-        (urls,)
-    )
+    cur.execute("""
+        SELECT evento_id, COUNT(*) AS coincidencias
+        FROM articulos
+        WHERE url = ANY(%s) AND evento_id IS NOT NULL
+        GROUP BY evento_id
+        ORDER BY coincidencias DESC
+        LIMIT 1;
+    """, (urls,))
     row = cur.fetchone()
     cur.close()
     conn.close()
-    return row[0] if row else None
+    if not row:
+        return None
+    evento_id, coincidencias = row
+    if coincidencias >= 2 or coincidencias >= len(urls):
+        return evento_id
+    return None
 
 
 def actualizar_num_fuentes(evento_id: int, num_fuentes: int):

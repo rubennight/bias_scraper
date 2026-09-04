@@ -10,4 +10,5 @@
   background: var(--paper-2);
   border: 1px solid var(--rule);
   color: var(--rev);
+  border-radius: 6px;
 }

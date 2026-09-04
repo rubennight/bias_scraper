@@ -4,15 +4,16 @@ import api from "../api";
 const CAT_COLOR = { A: "#2e7d32", B: "#c07800", C: "#C0392B" };
 const CAT_BG    = { A: "#eef5ec", B: "#fef9ec", C: "#fdf0ea" };
 const MIN       = 300;
+const MIN_SUBTIPO = 30;  // mínimo de elementos por subtipo para features completas
 
 function pct(v, max) { return Math.min(100, Math.round((v / max) * 100)); }
 
 function Barra({ valor, max, color }) {
   const p = pct(valor, max);
   return (
-    <div style={{ background: "#e8e4dc", borderRadius: 4, height: 8, overflow: "hidden" }}>
+    <div style={{ background: "#e8e4dc", borderRadius: 8, height: 8, overflow: "hidden" }}>
       <div style={{
-        height: "100%", borderRadius: 4,
+        height: "100%", borderRadius: 8,
         background: p >= 100 ? "#2e7d32" : p >= 60 ? color : "#C0392B",
         width: `${p}%`, transition: "width .5s",
       }} />
@@ -47,7 +48,7 @@ function MatrizConfusion({ data }) {
                     : v > 0 ? `rgba(192,57,43,${v / max * 0.5 + 0.05})` : "#f9f7f3",
                   fontWeight: i === j ? 700 : 400,
                   color: i === j ? "#2e7d32" : v > 0 ? "#C0392B" : "#aaa",
-                  borderRadius: 4,
+                  borderRadius: 8,
                 }}>
                   {v}
                 </td>
@@ -70,7 +71,7 @@ function ShapChart({ data }) {
       {["A", "B", "C"].map(cat => (
         <div key={cat} style={{
           background: CAT_BG[cat], border: `1px solid ${CAT_COLOR[cat]}40`,
-          borderRadius: 8, padding: "12px 14px",
+          borderRadius: 12, padding: "12px 14px",
         }}>
           <div style={{ fontWeight: 700, color: CAT_COLOR[cat], fontSize: 13, marginBottom: 10 }}>
             Categoría {cat}
@@ -84,8 +85,8 @@ function ShapChart({ data }) {
                   <span style={{ color: "#555", fontFamily: "monospace" }}>{f.feature}</span>
                   <span style={{ color: CAT_COLOR[cat], fontWeight: 600 }}>{f.importancia.toFixed(3)}</span>
                 </div>
-                <div style={{ background: "#e8e4dc", borderRadius: 3, height: 5 }}>
-                  <div style={{ height: "100%", borderRadius: 3, background: CAT_COLOR[cat], width: `${w}%` }} />
+                <div style={{ background: "#e8e4dc", borderRadius: 8, height: 5 }}>
+                  <div style={{ height: "100%", borderRadius: 8, background: CAT_COLOR[cat], width: `${w}%` }} />
                 </div>
               </div>
             );
@@ -175,12 +176,17 @@ export default function Clasificador() {
       <div className="card" style={{ marginBottom: "1.25rem" }}>
         <div className="card-header">Estado del dataset de entrenamiento</div>
         <div className="card-body">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 16 }}>
+
+          {/* Métrica 1 — oraciones por categoría dominante */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+            Oraciones por categoría dominante — umbral para entrenar
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
             {["A", "B", "C"].map(cat => {
               const v = dataset?.por_categoria?.[cat] || 0;
               const ok = v >= MIN;
               return (
-                <div key={cat} style={{ background: ok ? "#eef5ec" : "#fdf0ea", borderRadius: 8, padding: "12px 14px", border: `1px solid ${ok ? "#a0d8a0" : "#f5bbb0"}` }}>
+                <div key={cat} style={{ background: ok ? "#eef5ec" : "#fdf0ea", borderRadius: 12, padding: "12px 14px", border: `1px solid ${ok ? "#a0d8a0" : "#f5bbb0"}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontWeight: 700, color: CAT_COLOR[cat], fontSize: 15 }}>Cat. {cat}</span>
                     <span style={{ fontSize: 12, color: ok ? "#2e7d32" : "#C0392B", fontWeight: 600 }}>
@@ -191,18 +197,109 @@ export default function Clasificador() {
                     {v}
                   </div>
                   <Barra valor={v} max={MIN} color={CAT_COLOR[cat]} />
-                  <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>mínimo: {MIN}</div>
+                  <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>mínimo: {MIN} oraciones</div>
                 </div>
               );
             })}
           </div>
+
+          {/* Métrica 2 — elementos por tipo y subtipo */}
+          {dataset?.elementos_por_tipo && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+                Elementos identificados — riqueza del lexicón y features
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+                {["A", "B", "C"].map(cat => {
+                  const total       = dataset.elementos_por_tipo?.[cat] || 0;
+                  const detalle     = dataset.subtipos_detalle?.[cat] || {};
+                  const sinSubtipo  = dataset.elementos_por_subtipo?.[cat]?.sin_subtipo || 0;
+                  return (
+                    <div key={cat} style={{ background: "#f9f7f3", borderRadius: 8, padding: "10px 14px", border: "1px solid #e8e4dc" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span style={{ fontWeight: 700, color: CAT_COLOR[cat], fontSize: 13 }}>Elementos {cat}</span>
+                        <span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 16, color: CAT_COLOR[cat] }}>{total}</span>
+                      </div>
+                      {Object.entries(detalle).map(([sub, info]) => {
+                        const color = info.suficiente ? "#2e7d32" : info.total > 0 ? "#c07800" : "#bbb";
+                        return (
+                          <div key={sub} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#666", marginBottom: 3 }}>
+                            <span style={{ fontFamily: "monospace" }}>{sub}</span>
+                            <span style={{ fontWeight: 700, color }}>
+                              {info.total}
+                              {info.suficiente ? " ✓" : info.total > 0 ? ` · faltan ${MIN_SUBTIPO - info.total}` : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {Object.keys(detalle).length === 0 && total === 0 && (
+                        <div style={{ fontSize: 11, color: "#bbb" }}>sin elementos aún</div>
+                      )}
+                      {sinSubtipo > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#aaa", marginTop: 4, paddingTop: 4, borderTop: "1px dashed #e8e4dc" }}>
+                          <span style={{ fontFamily: "monospace" }}>sin_subtipo</span>
+                          <span>{sinSubtipo}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Estado del entrenamiento — tres niveles según categorías + subtipos */}
+          {dataset?.estado_entrenamiento && (() => {
+            const estado = dataset.estado_entrenamiento;
+            const cfg = {
+              anotando: {
+                bg: "#f4efe5", border: "#d8d1bf", icono: "",
+                texto: `Anotación en progreso — se necesitan al menos ${MIN} oraciones por categoría dominante para el primer entrenamiento`,
+                sub: null,
+              },
+              base: {
+                bg: "#fef9ec", border: "#f0c870", icono: "⚠",
+                texto: "Listo para entrenamiento base · 26 features lingüísticas",
+                sub: (() => {
+                  const faltantes = [];
+                  for (const cat of ["A", "B", "C"]) {
+                    const det = dataset.subtipos_detalle?.[cat] || {};
+                    for (const [sub, info] of Object.entries(det)) {
+                      if (!info.suficiente) faltantes.push(sub);
+                    }
+                  }
+                  return `Para activar las 15 features de subtipos se necesitan al menos ${MIN_SUBTIPO} elementos por subtipo. Faltantes: ${faltantes.join(", ")}`;
+                })(),
+              },
+              completo: {
+                bg: "#eef5ec", border: "#a0d8a0", icono: "✓",
+                texto: "Listo para entrenamiento completo · 41 features",
+                sub: "Todas las features de subtipos tienen datos suficientes",
+              },
+            }[estado];
+
+            return (
+              <div style={{
+                background: cfg.bg, border: `1px solid ${cfg.border}`,
+                borderRadius: 12, padding: "10px 14px", marginBottom: 16, fontSize: 13,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {cfg.icono && <span>{cfg.icono}</span>}
+                  <span style={{ fontWeight: 700, color: "#3a362f" }}>{cfg.texto}</span>
+                </div>
+                {cfg.sub && (
+                  <div style={{ fontSize: 11.5, color: "#888", marginTop: 4 }}>{cfg.sub}</div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Kappa */}
           {dataset?.ultimo_kappa && (
             <div style={{
               background: dataset.ultimo_kappa.valido ? "#eef5ec" : "#fef9ec",
               border: `1px solid ${dataset.ultimo_kappa.valido ? "#a0d8a0" : "#f0c870"}`,
-              borderRadius: 6, padding: "8px 12px", marginBottom: 16,
+              borderRadius: 12, padding: "8px 12px", marginBottom: 16,
               display: "flex", alignItems: "center", gap: 10, fontSize: 13,
             }}>
               <span style={{ fontWeight: 700 }}>Último Kappa:</span>
@@ -216,26 +313,85 @@ export default function Clasificador() {
             </div>
           )}
 
+          {/* Tabla de subtipos insuficientes — solo en estado "base" */}
+          {dataset?.estado_entrenamiento === "base" && (() => {
+            const filas = [];
+            for (const cat of ["A", "B", "C"]) {
+              const det = dataset.subtipos_detalle?.[cat] || {};
+              for (const [sub, info] of Object.entries(det)) {
+                if (!info.suficiente) {
+                  filas.push({ sub, cat, total: info.total, faltan: MIN_SUBTIPO - info.total });
+                }
+              }
+            }
+            filas.sort((a, b) => a.total - b.total);
+            if (!filas.length) return null;
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 8 }}>
+                  Subtipos insuficientes — más urgentes primero
+                </div>
+                <table style={{ fontSize: 12.5, borderCollapse: "collapse", width: "100%" }}>
+                  <thead>
+                    <tr>
+                      {["Subtipo", "Tipo", "Total", "Faltan"].map(h => (
+                        <th key={h} style={{ textAlign: "left", padding: "4px 12px", color: "#888", fontWeight: 600, fontSize: 11, borderBottom: "1px solid #e8e4dc" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filas.map((f, i) => (
+                      <tr key={`${f.cat}-${f.sub}`} style={{ background: i % 2 === 0 ? "#fff" : "#fafaf8" }}>
+                        <td style={{ padding: "6px 12px", fontFamily: "monospace" }}>{f.sub}</td>
+                        <td style={{ padding: "6px 12px", fontWeight: 700, color: CAT_COLOR[f.cat] }}>{f.cat}</td>
+                        <td style={{ padding: "6px 12px", fontFamily: "monospace" }}>{f.total}</td>
+                        <td style={{ padding: "6px 12px", fontFamily: "monospace", fontWeight: 700, color: "#c07800" }}>{f.faltan}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
           {error && <div style={{ color: "#C0392B", fontSize: 13, marginBottom: 10 }}>{error}</div>}
 
-          {/* Botón entrenar */}
+          {/* Botón entrenar — tres variantes según estado_entrenamiento */}
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button
-              onClick={handleEntrenar}
-              disabled={iniciando || enCurso || !dataset?.listo_para_entrenar}
-              style={{
-                background: dataset?.listo_para_entrenar && !enCurso ? "#C0392B" : "#ccc",
-                color: "#fff", border: "none", borderRadius: 8,
-                padding: "10px 28px", fontSize: 14, fontWeight: 700,
-                cursor: dataset?.listo_para_entrenar && !enCurso ? "pointer" : "default",
-                fontFamily: "inherit",
-              }}
-            >
-              {iniciando ? "Iniciando..." : enCurso ? "Entrenando..." : "Entrenar modelo"}
-            </button>
-            {!dataset?.listo_para_entrenar && (
+            {(() => {
+              const estado = dataset?.estado_entrenamiento || "anotando";
+              const puedeEntrenar = estado !== "anotando";
+              const variante = {
+                anotando: { color: "#ccc", texto: "Entrenar modelo" },
+                base:     { color: "#c07800", texto: "Entrenar (26 features) →" },
+                completo: { color: "#C0392B", texto: "Entrenar modelo completo →" },
+              }[estado];
+
+              return (
+                <button
+                  onClick={handleEntrenar}
+                  disabled={iniciando || enCurso || !puedeEntrenar}
+                  title={estado === "base" ? "Entrenamiento base — sin features de subtipos" : undefined}
+                  style={{
+                    background: puedeEntrenar && !enCurso ? variante.color : "#ccc",
+                    color: "#fff", border: "none", borderRadius: 8,
+                    padding: "10px 28px", fontSize: 14, fontWeight: 700,
+                    cursor: puedeEntrenar && !enCurso ? "pointer" : "default",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {iniciando ? "Iniciando..." : enCurso ? "Entrenando..." : variante.texto}
+                </button>
+              );
+            })()}
+            {dataset?.estado_entrenamiento === "anotando" && (
               <span style={{ fontSize: 12, color: "#888" }}>
                 Necesitas al menos {MIN} oraciones por categoría para entrenar.
+              </span>
+            )}
+            {dataset?.estado_entrenamiento === "base" && (
+              <span style={{ fontSize: 12, color: "#888" }}>
+                Entrenamiento base — sin features de subtipos.
               </span>
             )}
           </div>
@@ -251,9 +407,9 @@ export default function Clasificador() {
               <span style={{ color: "#555" }}>{activo.mensaje}</span>
               <span style={{ fontWeight: 700, color: "#C0392B", fontFamily: "monospace" }}>{activo.progreso}%</span>
             </div>
-            <div style={{ background: "#e8e4dc", borderRadius: 4, height: 10, overflow: "hidden" }}>
+            <div style={{ background: "#e8e4dc", borderRadius: 8, height: 10, overflow: "hidden" }}>
               <div style={{
-                height: "100%", borderRadius: 4,
+                height: "100%", borderRadius: 8,
                 background: "linear-gradient(90deg, #C0392B, #e05050)",
                 width: `${activo.progreso}%`,
                 transition: "width .8s",
@@ -356,7 +512,7 @@ export default function Clasificador() {
                     <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#888" }}>#{e.id}</td>
                     <td style={{ padding: "8px 12px" }}>
                       <span style={{
-                        fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 3,
+                        fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 8,
                         background: e.estado === "completado" ? "#dff0df" : e.estado === "error" ? "#fdf0ea" : "#fef0cc",
                         color: e.estado === "completado" ? "#2e7d32" : e.estado === "error" ? "#C0392B" : "#c07800",
                       }}>

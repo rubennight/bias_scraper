@@ -121,6 +121,55 @@ def guardar_resultados(job_id: int, resultados: dict, modelo_path: str):
 # CARGA DEL DATASET
 # ══════════════════════════════════════════════════════════════
 
+def cargar_elementos_por_oracion(oracion_ids: list) -> dict:
+    """
+    Carga los elementos de sesgo agrupados por oracion_id.
+    Retorna un dict: {oracion_id: {"A": {subtipo: count}, "B": {...}, "C": {...}}}
+    Separar A de B/C es crítico: los subtipos de A son de facticidad
+    (accion, declaracion, cifra, historico, legal) y los de B/C son de
+    mecanismo de sesgo (lexical, metafora, epistemico, omision, encuadre).
+    Mezclarlos en el mismo vector daría features sin interpretación.
+    """
+    if not oracion_ids:
+        return {}
+
+    conn = get_connection()
+    cur  = conn.cursor()
+
+    # Subtipos por familia
+    SUBTIPOS_A  = ["accion", "declaracion", "cifra", "historico", "legal"]
+    SUBTIPOS_BC = ["lexical", "metafora", "epistemico", "omision", "encuadre"]
+
+    cur.execute("""
+        SELECT an.oracion_id, es.tipo, es.subtipo, COUNT(*) AS n
+        FROM elementos_sesgo es
+        JOIN anotaciones an ON an.id = es.anotacion_id
+        WHERE an.oracion_id = ANY(%s) AND an.version = 1
+        GROUP BY an.oracion_id, es.tipo, es.subtipo
+    """, (oracion_ids,))
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    # Inicializar estructura para todas las oraciones
+    resultado = {}
+    for oid in oracion_ids:
+        resultado[oid] = {
+            "A": {s: 0 for s in SUBTIPOS_A},
+            "B": {s: 0 for s in SUBTIPOS_BC},
+            "C": {s: 0 for s in SUBTIPOS_BC},
+        }
+
+    for oracion_id, tipo, subtipo, n in rows:
+        if subtipo and tipo in resultado[oracion_id]:
+            familia = resultado[oracion_id][tipo]
+            if subtipo in familia:
+                familia[subtipo] = int(n)
+
+    return resultado
+
+
 def cargar_dataset(min_oraciones: int = 300) -> tuple:
     """
     Carga las oraciones anotadas con consenso o por un único anotador.
@@ -215,15 +264,22 @@ def cargar_dataset(min_oraciones: int = 300) -> tuple:
 # EXTRACCIÓN DE FEATURES
 # ══════════════════════════════════════════════════════════════
 
-def extraer_features(textos: list, job_id: int) -> list:
+def extraer_features(textos: list, oracion_ids: list, job_id: int) -> list:
     """
-    Extrae ~37 features lingüísticas por oración.
+    Extrae features lingüísticas + features de elementos por oración.
 
-    Grupos de features:
+    Grupos:
     - Léxicas (spaCy): adjetivos, adverbios, hedges, stop words
-    - Sintácticas (spaCy): POS tags, verbos factivos/eval., NER
+    - Sintácticas: POS tags, verbos factivos/eval., NER, árbol de dependencias
     - Sentimiento (pysentimiento): pos/neg/neu scores
     - Superficie: longitud, puntuación, cifras
+    - Facticidad (elementos_sesgo tipo A): counts por subtipo A
+    - Mecanismo B (elementos_sesgo tipo B): counts por subtipo B/C
+    - Mecanismo C (elementos_sesgo tipo C): counts por subtipo B/C
+
+    Los subtipos de A y los de B/C se mantienen SEPARADOS en el vector
+    porque son familias conceptualmente distintas. Mezclarlos haría
+    que 'accion' y 'lexical' quedaran en la misma dimensión sin sentido.
     """
     import spacy
     from pysentimiento import create_analyzer
@@ -232,6 +288,10 @@ def extraer_features(textos: list, job_id: int) -> list:
 
     nlp      = spacy.load("es_core_news_lg")
     analyzer = create_analyzer(task="sentiment", lang="es")
+
+    # Cargar elementos por oración — separados por familia
+    actualizar_progreso(job_id, 30, "Cargando elementos de anotación por oración...")
+    elementos_map = cargar_elementos_por_oracion(oracion_ids)
 
     # Palabras hedge en español — señalan incertidumbre o atribución
     HEDGES = {
@@ -308,37 +368,67 @@ def extraer_features(textos: list, job_id: int) -> list:
             tiene_org      = int(any(t.ent_type_ == "ORG" for t in tokens))
             tiene_lugar    = int(any(t.ent_type_ == "LOC" for t in tokens))
 
+            # ── Features de elementos por oración ────────────
+            oid   = oracion_ids[i + list(lote).index(texto)] if texto in lote else None
+            elems = elementos_map.get(oid, {
+                "A": {"accion":0,"declaracion":0,"cifra":0,"historico":0,"legal":0},
+                "B": {"lexical":0,"metafora":0,"epistemico":0,"omision":0,"encuadre":0},
+                "C": {"lexical":0,"metafora":0,"epistemico":0,"omision":0,"encuadre":0},
+            })
+            el_a = elems["A"]
+            el_b = elems["B"]
+            el_c = elems["C"]
+
             features.append([
-                # Léxicas (ratios sobre n)
-                n_adj    / n,       # 0
-                n_adv    / n,       # 1
-                n_stop   / n,       # 2
-                n_sustant / n,      # 3
-                n_verb   / n,       # 4
-                n_propn  / n,       # 5
-                tiene_hedge,        # 6
-                tiene_factivo,      # 7
-                tiene_eval,         # 8
-                # Sintácticas
-                n_ent,              # 9
-                prof_arbol,         # 10
-                n_neg,              # 11
-                # Sentimiento
-                score_pos,          # 12
-                score_neg,          # 13
-                score_neu,          # 14
-                polaridad,          # 15
-                # Superficie
-                longitud,           # 16
-                n_mayus,            # 17
-                n_excl,             # 18
-                n_interr,           # 19
-                n_comillas,         # 20
-                tiene_cifras,       # 21
-                tiene_fecha,        # 22
-                tiene_persona,      # 23
-                tiene_org,          # 24
-                tiene_lugar,        # 25
+                # ── Léxicas (ratios sobre n) ──────────────────
+                n_adj    / n,       # 0  ratio_adjetivos
+                n_adv    / n,       # 1  ratio_adverbios
+                n_stop   / n,       # 2  ratio_stopwords
+                n_sustant / n,      # 3  ratio_sustantivos
+                n_verb   / n,       # 4  ratio_verbos
+                n_propn  / n,       # 5  ratio_propios
+                tiene_hedge,        # 6  tiene_hedge
+                tiene_factivo,      # 7  tiene_verbo_factivo
+                tiene_eval,         # 8  tiene_verbo_evaluativo
+                # ── Sintácticas ───────────────────────────────
+                n_ent,              # 9  num_entidades
+                prof_arbol,         # 10 prof_arbol_dep
+                n_neg,              # 11 num_negaciones
+                # ── Sentimiento ───────────────────────────────
+                score_pos,          # 12 sentimiento_pos
+                score_neg,          # 13 sentimiento_neg
+                score_neu,          # 14 sentimiento_neu
+                polaridad,          # 15 polaridad
+                # ── Superficie ────────────────────────────────
+                longitud,           # 16 longitud_tokens
+                n_mayus,            # 17 mayusculas_internas
+                n_excl,             # 18 exclamaciones
+                n_interr,           # 19 interrogaciones
+                n_comillas,         # 20 comillas
+                tiene_cifras,       # 21 tiene_cifras
+                tiene_fecha,        # 22 tiene_fecha
+                tiene_persona,      # 23 tiene_persona
+                tiene_org,          # 24 tiene_organizacion
+                tiene_lugar,        # 25 tiene_lugar
+                # ── Facticidad — subtipos de A ─────────────────
+                # (separados de B/C: son epistémicamente distintos)
+                el_a["accion"],     # 26 elem_A_accion
+                el_a["declaracion"],# 27 elem_A_declaracion
+                el_a["cifra"],      # 28 elem_A_cifra
+                el_a["historico"],  # 29 elem_A_historico
+                el_a["legal"],      # 30 elem_A_legal
+                # ── Mecanismo de sesgo — subtipos de B ────────
+                el_b["lexical"],    # 31 elem_B_lexical
+                el_b["metafora"],   # 32 elem_B_metafora
+                el_b["epistemico"], # 33 elem_B_epistemico
+                el_b["omision"],    # 34 elem_B_omision
+                el_b["encuadre"],   # 35 elem_B_encuadre
+                # ── Mecanismo de sesgo — subtipos de C ────────
+                el_c["lexical"],    # 36 elem_C_lexical
+                el_c["metafora"],   # 37 elem_C_metafora
+                el_c["epistemico"], # 38 elem_C_epistemico
+                el_c["omision"],    # 39 elem_C_omision
+                el_c["encuadre"],   # 40 elem_C_encuadre
             ])
 
         prog = 35 + int((i + batch) / len(textos) * 25)
@@ -347,16 +437,29 @@ def extraer_features(textos: list, job_id: int) -> list:
     return features
 
 
-# Nombres de features para SHAP
+# Nombres de features para SHAP — deben coincidir con el orden del vector
 FEATURE_NAMES = [
+    # Léxicas
     "ratio_adjetivos", "ratio_adverbios", "ratio_stopwords",
     "ratio_sustantivos", "ratio_verbos", "ratio_propios",
     "tiene_hedge", "tiene_verbo_factivo", "tiene_verbo_evaluativo",
+    # Sintácticas
     "num_entidades", "prof_arbol_dep", "num_negaciones",
+    # Sentimiento
     "sentimiento_pos", "sentimiento_neg", "sentimiento_neu", "polaridad",
+    # Superficie
     "longitud_tokens", "mayusculas_internas", "exclamaciones",
     "interrogaciones", "comillas", "tiene_cifras",
     "tiene_fecha", "tiene_persona", "tiene_organizacion", "tiene_lugar",
+    # Facticidad — subtipos A (epistémicamente distintos de B/C)
+    "elem_A_accion", "elem_A_declaracion", "elem_A_cifra",
+    "elem_A_historico", "elem_A_legal",
+    # Mecanismo sesgo B
+    "elem_B_lexical", "elem_B_metafora", "elem_B_epistemico",
+    "elem_B_omision", "elem_B_encuadre",
+    # Mecanismo sesgo C
+    "elem_C_lexical", "elem_C_metafora", "elem_C_epistemico",
+    "elem_C_omision", "elem_C_encuadre",
 ]
 
 
@@ -475,7 +578,7 @@ def main():
 
         # 2. Extraer features
         actualizar_progreso(job_id, 20, "Iniciando extracción de features lingüísticas...")
-        X = extraer_features(textos, job_id)
+        X = extraer_features(textos, ids, job_id)
 
         # 3. Entrenar
         actualizar_progreso(job_id, 60, "Iniciando entrenamiento XGBoost...")
