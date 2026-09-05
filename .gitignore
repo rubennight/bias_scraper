@@ -9,8 +9,18 @@ venv/
 .venv/
 env/
 
-# Variables de entorno
+# Node — sin esto, api/node_modules no quedaba ignorado (web/ trae su
+# propio .gitignore, pero api/ no tenía ninguno)
+node_modules/
+dist/
+dist-ssr/
+npm-debug.log*
+
+# Variables de entorno — nunca subir claves reales
 .env
+.env.local
+*.local
+!.env.example
 
 # Logs del pipeline
 logs/
