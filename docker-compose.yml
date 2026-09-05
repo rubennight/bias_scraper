@@ -1,0 +1,44 @@
+services:
+  api:
+    build: ./api
+    container_name: bias-scraper-api
+    restart: unless-stopped
+    ports:
+      - "3010:3001"
+    environment:
+      - DB_HOST=192.168.1.64
+      - DB_PORT=5432
+      - DB_NAME=bias_scraper
+      - DB_USER=casaos
+      - DB_PASSWORD=${DB_PASSWORD}
+      - PORT=3001
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
+      - SCRAPER_API_KEY=${SCRAPER_API_KEY}
+
+  web:
+    build:
+      context: ./web
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    container_name: bias-scraper-web
+    restart: unless-stopped
+    ports:
+      - "3011:80"
+    depends_on:
+      - api
+
+  # El scraper NO corre como servicio permanente (profiles: "manual" evita
+  # que arranque solo con "docker compose up"). Se ejecuta manualmente con:
+  #   docker compose run --rm scraper python pipeline.py
+  scraper:
+    build: ./scraper
+    container_name: bias-scraper-pipeline
+    profiles: ["manual"]
+    environment:
+      - DB_HOST=192.168.1.64
+      - DB_PORT=5432
+      - DB_NAME=bias_scraper
+      - DB_USER=casaos
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - ./scraper:/app
