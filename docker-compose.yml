@@ -27,18 +27,22 @@ services:
     depends_on:
       - api
 
-  # El scraper NO corre como servicio permanente (profiles: "manual" evita
-  # que arranque solo con "docker compose up"). Se ejecuta manualmente con:
-  #   docker compose run --rm scraper python pipeline.py
+  # El scraper corre como servicio persistente (server.py, Flask+gunicorn)
+  # esperando peticiones en /run — en reposo no carga los modelos pesados
+  # de NLP, solo lo hace el subproceso de pipeline.py cuando se dispara.
+  # No se publica su puerto al host: solo debe ser alcanzable desde api/
+  # por la red interna de Docker Compose, vía el nombre del servicio
+  # "scraper" (ver api/routes/scraper.js).
   scraper:
     build: ./scraper
     container_name: bias-scraper-pipeline
-    profiles: ["manual"]
+    restart: unless-stopped
     environment:
       - DB_HOST=192.168.1.64
       - DB_PORT=5432
       - DB_NAME=bias_scraper
       - DB_USER=casaos
       - DB_PASSWORD=${DB_PASSWORD}
+      - SCRAPER_API_KEY=${SCRAPER_API_KEY}
     volumes:
       - ./scraper:/app

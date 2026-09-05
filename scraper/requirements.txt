@@ -14,6 +14,11 @@ psycopg2-binary==2.9.12
 # Variables de entorno
 python-dotenv==1.0.1
 
+# Servidor HTTP — expone /run para que api/ dispare el pipeline
+# vía red interna de Docker (ver server.py)
+flask==3.0.3
+gunicorn==22.0.0
+
 # NLP — embeddings y modelo de lenguaje
 transformers>=4.40.0
 torch>=2.3.0

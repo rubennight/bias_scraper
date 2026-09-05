@@ -1,8 +1,17 @@
-// scraper.js — Endpoint para ejecutar el pipeline KDD
+// scraper.js — Endpoint para disparar el pipeline KDD
+//
+// api/ y scraper/ son contenedores Docker separados; api/ no tiene
+// Python. En vez de spawn("python", ...) (que fallaba con ENOENT
+// dentro del contenedor de la API), esta ruta hace de proxy HTTP
+// hacia el servicio Flask que corre dentro del contenedor scraper
+// (ver scraper/server.py), reenviando su stream SSE tal cual al
+// frontend — el contrato de /api/scraper/run no cambia.
 
 const router = require("express").Router();
-const { spawn } = require("child_process");
-const path = require("path");
+const { Readable } = require("stream");
+
+const SCRAPER_URL = process.env.SCRAPER_URL || "http://scraper:8000";
+const CONNECT_TIMEOUT_MS = 10000;
 
 // Middleware de autenticación por API key — solo para este router.
 // Esta ruta dispara el pipeline pesado (scraping + NLP con
@@ -25,21 +34,26 @@ function requireApiKey(req, res, next) {
   next();
 }
 
+function eventoSSE(payload) {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function horaActual() {
+  return new Date().toLocaleTimeString("es-MX");
+}
+
 // POST /api/scraper/run
-// Ejecuta el pipeline KDD y streamea logs en tiempo real vía SSE
-router.post("/run", requireApiKey, (req, res) => {
-  console.log("[Scraper] Iniciando pipeline...");
+// Reenvía la corrida al servicio scraper y streamea sus logs (SSE)
+router.post("/run", requireApiKey, async (req, res) => {
+  console.log(`[Scraper] Solicitando corrida a ${SCRAPER_URL}/run ...`);
 
   // Headers para SSE
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   // Mismo origen permitido que el resto de la API (ver CORS_ORIGIN en
-  // api/index.js) — esta ruta setea el header a mano porque responde
-  // con SSE en vez de pasar por el middleware `cors()` normal. El
-  // header solo admite UN origen, así que se refleja el de la
-  // petición si está en la lista permitida (igual que hace `cors()`
-  // internamente cuando se le da un arreglo de orígenes).
+  // api/index.js). El header solo admite UN origen, así que se refleja
+  // el de la petición si está en la lista permitida.
   const origenesPermitidos = (process.env.CORS_ORIGIN || "http://localhost:5173").split(",");
   const origenPeticion = req.headers.origin;
   res.setHeader(
@@ -47,157 +61,79 @@ router.post("/run", requireApiKey, (req, res) => {
     origenesPermitidos.includes(origenPeticion) ? origenPeticion : origenesPermitidos[0]
   );
 
-  const summary = {
-    eventos_detectados: 0,
-    articulos_guardados: 0,
-    articulos_fallidos: 0,
-    duracion: "00:00:00",
-  };
+  const controller = new AbortController();
+  // Timeout solo para ESTABLECER la conexión — una vez que llega la
+  // respuesta se desarma (clearTimeout), así el stream puede seguir
+  // vivo varios minutos (la corrida real tarda ~9 min) sin que este
+  // timeout lo corte a mitad de camino.
+  const connectTimer = setTimeout(() => {
+    controller.abort(new Error("timeout de conexión con el servicio scraper"));
+  }, CONNECT_TIMEOUT_MS);
 
-  // Keepalive para mantener la conexión viva
-  const keepaliveInterval = setInterval(() => {
-    res.write(": keepalive\n\n");
-  }, 5000);
+  let upstream;
+  try {
+    upstream = await fetch(`${SCRAPER_URL}/run`, {
+      method: "POST",
+      headers: { "X-API-Key": process.env.SCRAPER_API_KEY || "" },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(connectTimer);
+    const motivo = err.name === "AbortError"
+      ? `El servicio scraper no respondió en ${CONNECT_TIMEOUT_MS / 1000}s`
+      : err.message;
+    console.error("[Scraper] No se pudo conectar al servicio scraper:", motivo);
+    res.write(eventoSSE({
+      type: "log", level: "ERROR", timestamp: horaActual(),
+      message: `No se pudo conectar al servicio scraper (${SCRAPER_URL}): ${motivo}`,
+    }));
+    res.write(eventoSSE({ type: "done", code: 1 }));
+    return res.end();
+  }
+  clearTimeout(connectTimer);
 
-  // Ejecutar pipeline.py con -u para deshabilitar buffering
-  const scraperPath = path.join(__dirname, "../../scraper/pipeline.py");
-  const pythonProcess = spawn("python", ["-u", scraperPath], {
-    cwd: path.join(__dirname, "../../"),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  if (!upstream.ok || !upstream.body) {
+    let detalle = `HTTP ${upstream.status}`;
+    try {
+      const body = await upstream.json();
+      if (body?.error) detalle = body.error;
+    } catch { /* respuesta no era JSON, nos quedamos con el status */ }
 
-  console.log("[Scraper] Proceso Python iniciado, PID:", pythonProcess.pid);
+    console.error("[Scraper] El servicio scraper respondió con error:", detalle);
+    res.write(eventoSSE({
+      type: "log", level: "ERROR", timestamp: horaActual(),
+      message: `El servicio scraper respondió con error: ${detalle}`,
+    }));
+    res.write(eventoSSE({ type: "done", code: 1 }));
+    return res.end();
+  }
 
-  let hasOutput = false;
+  // Reenviar el stream del servicio scraper directo al cliente —
+  // ya viene formateado como SSE (mismos eventos log/summary/done).
+  const upstreamStream = Readable.fromWeb(upstream.body);
+  upstreamStream.pipe(res);
 
-  // Capturar stdout
-  pythonProcess.stdout.on("data", (data) => {
-    hasOutput = true;
-    const text = data.toString();
-    console.log("[Scraper stdout]", text);
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      // Parsear información resumida — con mejor matching
-      if (line.includes("Eventos detectados")) {
-        const match = line.match(/Eventos detectados\s*:\s*(\d+)/i);
-        if (match) {
-          summary.eventos_detectados = parseInt(match[1]);
-          console.log("[Scraper] ✓ Eventos detectados:", summary.eventos_detectados);
-        }
-      }
-      if (line.includes("Guardados en BD")) {
-        const match = line.match(/Guardados en BD\s*:\s*(\d+)/i);
-        if (match) {
-          summary.articulos_guardados = parseInt(match[1]);
-          console.log("[Scraper] ✓ Artículos guardados:", summary.articulos_guardados);
-        }
-      }
-      if (line.includes("Fallidos")) {
-        const match = line.match(/Fallidos\s*:\s*(\d+)/i);
-        if (match) {
-          summary.articulos_fallidos = parseInt(match[1]);
-          console.log("[Scraper] ✓ Artículos fallidos:", summary.articulos_fallidos);
-        }
-      }
-      if (line.includes("total") && line.includes("raci")) {
-        const match = line.match(/Duraci.n total\s*:\s*(.+?)(?:\s*$)/i);
-        if (match) {
-          summary.duracion = match[1].trim();
-          console.log("[Scraper] ✓ Duración:", summary.duracion);
-        }
-      }
-
-      // Determinar nivel de log
-      let level = "INFO";
-      if (line.includes("[ERROR]")) level = "ERROR";
-      if (line.includes("[DEBUG]")) level = "DEBUG";
-
-      // Extraer timestamp y mensaje
-      const logEntry = {
-        type: "log",
-        level,
-        timestamp: new Date().toLocaleTimeString("es-MX"),
-        message: line.trim(),
-      };
-
-      res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+  upstreamStream.on("error", (err) => {
+    console.error("[Scraper] Error leyendo el stream del servicio scraper:", err.message);
+    if (!res.writableEnded) {
+      res.write(eventoSSE({
+        type: "log", level: "ERROR", timestamp: horaActual(),
+        message: `Se perdió la conexión con el servicio scraper: ${err.message}`,
+      }));
+      res.write(eventoSSE({ type: "done", code: 1 }));
+      res.end();
     }
   });
 
-  // Capturar stderr
-  pythonProcess.stderr.on("data", (data) => {
-    hasOutput = true;
-    const text = data.toString();
-    console.log("[Scraper stderr]", text);
-
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      res.write(
-        `data: ${JSON.stringify({
-          type: "log",
-          level: "ERROR",
-          timestamp: new Date().toLocaleTimeString("es-MX"),
-          message: line.trim(),
-        })}\n\n`
-      );
-    }
-  });
-
-  // Cuando termina el proceso
-  pythonProcess.on("close", (code) => {
-    clearInterval(keepaliveInterval);
-
-    console.log("[Scraper] Proceso finalizado con código:", code);
-    console.log("[Scraper] ¿Tuvo output?:", hasOutput);
-    console.log("[Scraper] Resumen final:", summary);
-
-    // Enviar resumen
-    res.write(
-      `data: ${JSON.stringify({
-        type: "summary",
-        data: summary,
-      })}\n\n`
-    );
-
-    // Señal de fin
-    res.write(
-      `data: ${JSON.stringify({
-        type: "done",
-        code,
-      })}\n\n`
-    );
-
-    res.end();
-  });
-
-  // Manejo de errores
-  pythonProcess.on("error", (err) => {
-    clearInterval(keepaliveInterval);
-    console.error("[Scraper] Error al iniciar proceso:", err);
-    res.write(
-      `data: ${JSON.stringify({
-        type: "log",
-        level: "ERROR",
-        timestamp: new Date().toLocaleTimeString("es-MX"),
-        message: `Error al ejecutar pipeline: ${err.message}`,
-      })}\n\n`
-    );
-    res.end();
-  });
-
-  // Si el cliente cierra la pestaña/navega, matar el proceso
-  res.on("close", () => {
-    if (pythonProcess.exitCode === null) {
-      console.log("[Scraper] Cliente cerró la conexión, matando proceso");
-      clearInterval(keepaliveInterval);
-      pythonProcess.kill();
+  // Si el cliente cierra la pestaña/navega, abortar la corrida upstream
+  // (el servicio scraper mata el subproceso de pipeline.py al perder
+  // la conexión, igual que hacía Node antes con pythonProcess.kill()).
+  req.on("close", () => {
+    if (!res.writableEnded) {
+      console.log("[Scraper] Cliente cerró la conexión, abortando corrida en el servicio scraper");
+      controller.abort();
     }
   });
 });
 
 module.exports = router;
-
