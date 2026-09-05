@@ -4,16 +4,48 @@ const router = require("express").Router();
 const { spawn } = require("child_process");
 const path = require("path");
 
+// Middleware de autenticación por API key — solo para este router.
+// Esta ruta dispara el pipeline pesado (scraping + NLP con
+// transformers/torch); expuesta sin protección, cualquiera podría
+// forzar corridas repetidas y saturar un servidor sin GPU.
+function requireApiKey(req, res, next) {
+  const esperado = process.env.SCRAPER_API_KEY;
+  const recibido = req.header("X-API-Key");
+
+  if (!esperado) {
+    // Falta configurar la key en el servidor — no abrir la ruta por defecto.
+    console.error("[Scraper] SCRAPER_API_KEY no está configurada en el entorno.");
+    return res.status(500).json({ error: "El servidor no tiene configurada la autenticación del scraper" });
+  }
+
+  if (recibido !== esperado) {
+    return res.status(401).json({ error: "API key inválida o ausente — envía el header X-API-Key" });
+  }
+
+  next();
+}
+
 // POST /api/scraper/run
 // Ejecuta el pipeline KDD y streamea logs en tiempo real vía SSE
-router.post("/run", (req, res) => {
+router.post("/run", requireApiKey, (req, res) => {
   console.log("[Scraper] Iniciando pipeline...");
 
   // Headers para SSE
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+  // Mismo origen permitido que el resto de la API (ver CORS_ORIGIN en
+  // api/index.js) — esta ruta setea el header a mano porque responde
+  // con SSE en vez de pasar por el middleware `cors()` normal. El
+  // header solo admite UN origen, así que se refleja el de la
+  // petición si está en la lista permitida (igual que hace `cors()`
+  // internamente cuando se le da un arreglo de orígenes).
+  const origenesPermitidos = (process.env.CORS_ORIGIN || "http://localhost:5173").split(",");
+  const origenPeticion = req.headers.origin;
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    origenesPermitidos.includes(origenPeticion) ? origenPeticion : origenesPermitidos[0]
+  );
 
   const summary = {
     eventos_detectados: 0,

@@ -177,8 +177,12 @@ router.get("/lexicon", async (req, res) => {
   try {
     const { tipo } = req.query;
 
-    // Construcción dinámica del WHERE según el filtro
-    const whereClause = tipo ? `WHERE es.tipo = '${tipo}'` : "";
+    // Construcción dinámica del WHERE según el filtro — el VALOR va
+    // parametrizado ($1), nunca interpolado directo en el SQL (antes
+    // se armaba con `WHERE es.tipo = '${tipo}'`, inyección SQL directa
+    // vía ?tipo=).
+    const whereClause = tipo ? "WHERE es.tipo = $1" : "";
+    const params = tipo ? [tipo] : [];
 
     const result = await pool.query(`
       SELECT
@@ -193,7 +197,7 @@ router.get("/lexicon", async (req, res) => {
       ${whereClause}
       GROUP BY es.elemento, es.alternativa, es.tipo, es.subtipo
       ORDER BY es.tipo, frecuencia DESC, es.elemento
-    `);
+    `, params);
 
     // Separar en dos grupos para que el frontend los maneje correctamente:
     // - "sesgo": elementos B y C → el lexicón valente (pares con alternativa)

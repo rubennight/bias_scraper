@@ -2,13 +2,24 @@
 
 const express = require("express");
 const cors    = require("cors");
-require("dotenv").config({ path: "../.env" });
+const path    = require("path");
+// path.resolve(__dirname, ...) en vez de una ruta relativa a secas:
+// una ruta relativa como "../.env" se resuelve contra el cwd del
+// proceso, no contra la ubicación de este archivo — si algo invoca
+// `node api/index.js` desde la raíz (común en Docker), no encontraba
+// el .env. En contenedor no pasa nada si el archivo no existe: las
+// variables ya vienen inyectadas por docker-compose.
+require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
 // Middlewares
-app.use(cors({ origin: "http://localhost:5173" })); // Vite dev server
+// CORS_ORIGIN acepta uno o varios orígenes separados por coma —
+// necesario para aceptar tanto localhost (dev) como el dominio
+// público una vez expuesto vía Cloudflare Tunnel.
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173").split(",");
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 // Rutas

@@ -1,8 +1,14 @@
 // db.js — Conexión a PostgreSQL
-// Reutiliza las mismas variables del .env del proyecto principal
+// Reutiliza las mismas variables del .env del proyecto principal.
+// En Docker no existe archivo .env — las variables (DB_HOST, etc.)
+// ya vienen inyectadas por docker-compose.yml como env vars reales
+// del contenedor. dotenv.config() no lanza excepción si el archivo
+// no existe (solo devuelve un error en el resultado), así que esto
+// no rompe el arranque en ninguno de los dos entornos.
 
 const { Pool } = require("pg");
-require("dotenv").config({ path: "../.env" }); // apunta al .env raíz
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
 
 const pool = new Pool({
   host:     process.env.DB_HOST,
