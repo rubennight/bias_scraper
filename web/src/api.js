@@ -1,12 +1,17 @@
 import axios from "axios";
 
+// VITE_API_URL se define en web/.env(.example) — con fallback a
+// localhost:3001 para que el desarrollo local siga funcionando sin
+// configurar nada.
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+
 const api = axios.create({
-  baseURL: "http://localhost:3001",
+  baseURL: API_URL,
 });
 
 // Scraper — usa fetch nativo porque la respuesta es un stream SSE
 export const runScraper = () =>
-  fetch("http://localhost:3001/api/scraper/run", { method: "POST" });
+  fetch(`${API_URL}/api/scraper/run`, { method: "POST" });
 
 // Corpus
 export const getStats       = ()       => api.get("/api/stats");
