@@ -11,7 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# torch se instala aparte, versión CPU-only (sin CUDA/triton) — el
+# ZimaBlade de despliegue no tiene GPU, y la versión completa pesa
+# varios GB de más que nunca se usarían.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Modelo de spaCy en español, usado por annotator.py y actors.py
+RUN python -m spacy download es_core_news_lg
 
 # Instala los navegadores que playwright necesita
 RUN playwright install --with-deps chromium

@@ -21,7 +21,10 @@ gunicorn==22.0.0
 
 # NLP — embeddings y modelo de lenguaje
 transformers>=4.40.0
-torch>=2.3.0
+# torch>=2.3.0  (se instala aparte en el Dockerfile, versión CPU-only)
+
+# NLP — segmentación de oraciones en español (usado por annotator.py)
+spacy>=3.7.0
 
 # NLP — procesamiento lingüístico en español
 nltk==3.8.1
@@ -29,3 +32,10 @@ nltk==3.8.1
 # Clustering y machine learning
 scikit-learn>=1.4.2
 numpy>=1.26.4
+
+# Clasificador (classifier.py) — XGBoost + análisis de importancia
+xgboost>=2.0.0
+shap>=0.45.0
+
+# Análisis de sentimiento en español (usado por classifier.py)
+pysentimiento>=0.7.0
