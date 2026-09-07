@@ -3,11 +3,17 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Dependencias del sistema necesarias para playwright, lxml, torch, etc.
+# tzdata es necesario para que Python interprete correctamente la
+# variable de entorno TZ (ver docker-compose.yml) — sin esto, el
+# contenedor queda en UTC sin importar qué TZ se le pase, y
+# date.today() calcula el día equivocado varias horas antes de
+# medianoche en México (UTC va 6h adelante, sin horario de verano).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libxml2-dev \
     libxslt1-dev \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

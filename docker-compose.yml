@@ -44,5 +44,9 @@ services:
       - DB_USER=casaos
       - DB_PASSWORD=${DB_PASSWORD}
       - SCRAPER_API_KEY=${SCRAPER_API_KEY}
+      # Sin esto, el contenedor queda en UTC — 6h adelante de México
+      # (sin horario de verano desde 2022) — y date.today() calcula
+      # el día equivocado entre las 6pm y medianoche hora local.
+      - TZ=America/Mexico_City
     volumes:
       - ./scraper:/app
