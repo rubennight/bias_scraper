@@ -20,6 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Modelo de spaCy en español, usado por annotator.py y actors.py
 RUN python -m spacy download es_core_news_lg
 
+# Datos de NLTK — newspaper3k los usa internamente (article.nlp())
+# para tokenizar texto al generar resumen/keywords, aun en artículos
+# en español (busca "punkt" genérico, no un paquete por idioma).
+RUN python -m nltk.downloader punkt punkt_tab -d /usr/local/nltk_data
+
 # Instala los navegadores que playwright necesita
 RUN playwright install --with-deps chromium
 
