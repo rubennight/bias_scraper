@@ -175,33 +175,8 @@ USAR_SEMANAS_ISO = True
 
 # KDD Fase 3 — Clustering por keywords
 # Mínimo de keywords compartidas entre dos artículos de fuentes
-# distintas para considerarlos parte del mismo evento. Es un PISO,
-# no la única condición — ver MIN_IDF_COMPARTIDO abajo.
+# distintas para considerarlos parte del mismo evento.
 MIN_KEYWORDS_COMPARTIDAS = 4
-
-# KDD Fase 3 — Peso IDF mínimo de las keywords compartidas.
-# El conteo crudo de arriba no distingue "keyword que define el tema
-# de la semana" (ej. el nombre de un gobernador en el centro de una
-# crisis con varios desarrollos) de "keyword que además distingue QUÉ
-# desarrollo específico es". Cuando un solo actor domina casi todos
-# los artículos candidatos de la semana, su nombre solo + 1-2 palabras
-# administrativas genéricas ya alcanzan MIN_KEYWORDS_COMPARTIDAS aunque
-# los artículos traten sub-temas distintos (ver evento #144, ago 2026:
-# sucesión de gobernador + senador bajo investigación + exfuncionario
-# detenido, conectados solo por "sinaloa"/"rocha"/"moya").
-#
-# Por eso, además del piso de conteo, se exige que la SUMA de IDF
-# (log(N_pool_candidato_semana / frecuencia_de_la_keyword_esa_semana))
-# de las keywords compartidas alcance este mínimo. Calibrado con datos
-# reales: pares que debían separarse dieron pesos de 3.7 y 6.9; pares
-# que debían conectarse dieron 11.1-13.6 — hueco claro entre 7 y 11.
-#
-# El pool candidato real de producción suele ser mayor al usado para
-# calibrar (N=93, solo eventos ya formados esa semana) — esto tiende a
-# hacer el umbral más conservador en producción, no menos. Revisar
-# este valor si se observan eventos fusionados de más o divididos de
-# más tras varias corridas (ver docs/bitacora/).
-MIN_IDF_COMPARTIDO = 9
 
 # Mínimo de fuentes DISTINTAS para que un cluster sea evento válido
 MIN_FUENTES_POR_EVENTO = 3

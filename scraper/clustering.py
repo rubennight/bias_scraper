@@ -14,7 +14,6 @@
 # =============================================================
 
 import logging
-import math
 import time
 from datetime import date, datetime, timedelta
 from collections import defaultdict
@@ -24,7 +23,7 @@ from config import (
     RSS_FEEDS, HORAS_ANTIGUEDAD, DELAY_SCRAPER,
     MIN_FUENTES_POR_EVENTO, MAX_ARTICULOS_POR_FUENTE,
     PALABRAS_RELEVANTES, PALABRAS_EXCLUIR,
-    MIN_KEYWORDS_COMPARTIDAS, MIN_IDF_COMPARTIDO,
+    MIN_KEYWORDS_COMPARTIDAS,
 )
 
 log = logging.getLogger(__name__)
@@ -205,42 +204,13 @@ def extraer_keywords_todos(articulos: list) -> list:
     return enriquecidos
 
 
-def calcular_idf_keywords(articulos: list) -> dict:
-    """
-    IDF de cada keyword sobre el pool candidato de la semana:
-    idf = log(N / frecuencia_documental).
-
-    Un actor/lugar que domina casi todos los artículos candidatos de
-    la semana (ej. el gobernador en el centro de una crisis con varios
-    desarrollos) tiene IDF bajo — su nombre solo no debería bastar para
-    conectar dos artículos. Ver MIN_IDF_COMPARTIDO en config.py.
-    """
-    n = len(articulos)
-    if n == 0:
-        return {}
-
-    df = defaultdict(int)
-    for art in articulos:
-        for kw in set(art.get("keywords", [])):
-            df[kw] += 1
-
-    return {kw: math.log(n / cnt) for kw, cnt in df.items()}
-
-
 def construir_grafo_eventos(articulos: list) -> dict:
     """
     Construye grafo de co-ocurrencia de keywords.
-    Nodos = artículos · Aristas entre artículos de FUENTES DISTINTAS
-    que cumplen DOS condiciones:
-      1. ≥ MIN_KEYWORDS_COMPARTIDAS keywords comunes (piso de cobertura)
-      2. La SUMA de IDF de esas keywords comunes ≥ MIN_IDF_COMPARTIDO
-         (evita que keywords muy frecuentes esa semana — un actor que
-         domina casi todos los candidatos — conecten por sí solas
-         artículos de sub-temas distintos; ver evento #144, ago 2026)
+    Nodos = artículos · Aristas = ≥ MIN_KEYWORDS_COMPARTIDAS keywords
+    comunes entre artículos de FUENTES DISTINTAS.
     """
-    idf = calcular_idf_keywords(articulos)
     grafo = defaultdict(set)
-    pesos_calculados = []
 
     for i in range(len(articulos)):
         for j in range(i + 1, len(articulos)):
@@ -251,23 +221,9 @@ def construir_grafo_eventos(articulos: list) -> dict:
                 continue
 
             comunes = set(a["keywords"]) & set(b["keywords"])
-            if len(comunes) < MIN_KEYWORDS_COMPARTIDAS:
-                continue
-
-            peso = sum(idf.get(kw, 0) for kw in comunes)
-            pesos_calculados.append(peso)
-            if peso >= MIN_IDF_COMPARTIDO:
+            if len(comunes) >= MIN_KEYWORDS_COMPARTIDAS:
                 grafo[a["url"]].add(b["url"])
                 grafo[b["url"]].add(a["url"])
-
-    if pesos_calculados:
-        pesos_calculados.sort()
-        mediana = pesos_calculados[len(pesos_calculados) // 2]
-        log.info(
-            f"[Grafo] {len(pesos_calculados)} pares con ≥{MIN_KEYWORDS_COMPARTIDAS} "
-            f"keywords comunes · peso IDF mediana={mediana:.1f} "
-            f"min={pesos_calculados[0]:.1f} max={pesos_calculados[-1]:.1f}"
-        )
 
     log.info(f"[Grafo] {len(grafo)} artículos con al menos una conexión")
     return dict(grafo)
