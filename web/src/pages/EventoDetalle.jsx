@@ -288,11 +288,15 @@ export default function EventoDetalle() {
             <span>Evento <span style={{ color: "var(--rev)", fontWeight: 800 }}>#{evento.id}</span></span>
           </div>
           <h1 className="evento-titular">{evento.titular_evento}</h1>
-          <p className="evento-deck">
-            Cobertura simultánea en <b>{evento.num_fuentes} fuentes</b> con un total de
-            <b> {totalArticulos} artículos</b> recolectados durante la ventana del
-            <b> {evento.ventana_inicio?.slice(0,10)} al {evento.ventana_fin?.slice(0,10)}</b>.
-          </p>
+          {evento.resumen ? (
+            <p className="evento-deck">{evento.resumen}</p>
+          ) : (
+            <p className="evento-deck">
+              Cobertura simultánea en <b>{evento.num_fuentes} fuentes</b> con un total de
+              <b> {totalArticulos} artículos</b> recolectados durante la ventana del
+              <b> {evento.ventana_inicio?.slice(0,10)} al {evento.ventana_fin?.slice(0,10)}</b>.
+            </p>
+          )}
         </div>
         <div className="meta-card">
           <div className="meta-cell">

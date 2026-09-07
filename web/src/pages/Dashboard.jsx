@@ -190,8 +190,12 @@ export default function Dashboard() {
                 <Link to={`/eventos/${lead.id}`}>{lead.titular_evento}</Link>
               </h3>
               <p className="lead-deck">
-                Cobertura simultánea en <b>{lead.fuentes_distintas} fuentes</b> con un total de
-                <b> {lead.total_articulos} artículos</b> durante la ventana.
+                {lead.resumen || (
+                  <>
+                    Cobertura simultánea en <b>{lead.fuentes_distintas} fuentes</b> con un total de
+                    <b> {lead.total_articulos} artículos</b> durante la ventana.
+                  </>
+                )}
                 {lead.top_keywords?.length > 0 && <> Términos predominantes: <b>{lead.top_keywords.slice(0,3).join(", ")}</b>.</>}
               </p>
             </div>

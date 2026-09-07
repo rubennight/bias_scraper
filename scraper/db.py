@@ -59,7 +59,8 @@ def crear_tablas():
             num_fuentes     INT NOT NULL,
             ventana_inicio  DATE NOT NULL,
             ventana_fin     DATE NOT NULL,
-            detectado_en    TIMESTAMP DEFAULT NOW()
+            detectado_en    TIMESTAMP DEFAULT NOW(),
+            resumen         TEXT
         );
 
         CREATE TABLE IF NOT EXISTS articulos (
@@ -354,6 +355,52 @@ def actualizar_num_fuentes(evento_id: int, num_fuentes: int):
     cur.execute(
         "UPDATE eventos SET num_fuentes = GREATEST(num_fuentes, %s) WHERE id = %s;",
         (num_fuentes, evento_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def obtener_articulos_evento(evento_id: int) -> list:
+    """
+    Trae TODOS los artículos actualmente guardados para un evento (no
+    solo los del cluster de la corrida en curso) — usado para generar
+    el resumen con Claude sobre el estado real y completo del evento,
+    incluyendo artículos guardados en corridas anteriores.
+    """
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT a.titular, a.cuerpo, f.nombre
+        FROM articulos a
+        JOIN fuentes f ON f.id = a.fuente_id
+        WHERE a.evento_id = %s AND a.cuerpo IS NOT NULL
+        ORDER BY a.fecha_pub
+    """, (evento_id,))
+    filas = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [
+        {"titular": titular, "cuerpo": cuerpo, "fuente_nombre": fuente}
+        for titular, cuerpo, fuente in filas
+    ]
+
+
+def actualizar_resumen_evento(evento_id: int, titulo: str, resumen: str):
+    """
+    Guarda el título y resumen generados por DeepSeek. Sobreescribe
+    titular_evento (antes era solo el titular más largo del cluster,
+    elegido algorítmicamente) — así el frontend no necesita cambios
+    para mostrar el título mejorado, ya lo muestra en todos lados.
+    resumen es una columna nueva, nullable: si esto nunca corre (sin
+    DEEPSEEK_API_KEY, error de red, etc.) el evento simplemente se
+    queda sin resumen y el frontend cae de vuelta al texto genérico.
+    """
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute(
+        "UPDATE eventos SET titular_evento = %s, resumen = %s WHERE id = %s;",
+        (titulo, resumen, evento_id)
     )
     conn.commit()
     cur.close()

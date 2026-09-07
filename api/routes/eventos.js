@@ -56,6 +56,7 @@ router.get("/", async (req, res) => {
       SELECT
         e.id,
         e.titular_evento,
+        e.resumen,
         e.num_fuentes,
         e.ventana_inicio,
         e.ventana_fin,
@@ -145,6 +146,7 @@ router.get("/:id", async (req, res) => {
       SELECT
         e.id,
         e.titular_evento,
+        e.resumen,
         e.num_fuentes,
         e.ventana_inicio,
         e.ventana_fin,

@@ -14,6 +14,11 @@ psycopg2-binary==2.9.12
 # Variables de entorno
 python-dotenv==1.0.1
 
+# Título + resumen del evento (ver summarizer.py) — vía HTTP directo
+# a la API de DeepSeek con requests (ya es dependencia arriba).
+# pydantic viene como dependencia transitiva de spacy, no hace falta
+# listarlo aparte.
+
 # Servidor HTTP — expone /run para que api/ dispare el pipeline
 # vía red interna de Docker (ver server.py)
 flask==3.0.3

@@ -26,10 +26,13 @@ from db import (
     insertar_keywords,
     obtener_evento_id_por_urls,
     actualizar_num_fuentes,
+    obtener_articulos_evento,
+    actualizar_resumen_evento,
 )
 from clustering import detectar_eventos, get_semana_iso
 from annotator import segmentar_articulos_nuevos
 from actors import extraer_actores_nuevos
+from summarizer import generar_resumen_evento
 
 # ── Logging ───────────────────────────────────────────────────
 # Todo lo que pase por logging.info() — incluyendo clustering.py
@@ -161,6 +164,24 @@ def ejecutar():
         if guardados_evento == 0 and evento_nuevo:
             eliminar_evento(evento_id)
             log.info(f"  [Evento] Todos los articulos eran duplicados. Evento eliminado.")
+        elif guardados_evento > 0:
+            # Título + resumen vía Claude — sobre el estado COMPLETO del
+            # evento en BD (no solo lo agregado en esta corrida), para que
+            # un evento que crece en varias corridas siga teniendo un
+            # resumen que refleje todos sus artículos. Best-effort: no
+            # truena el pipeline si falla (ver summarizer.py).
+            log.info(f"  [Resumen] Generando título y resumen con Claude...")
+            try:
+                articulos_completos = obtener_articulos_evento(evento_id)
+                resultado = generar_resumen_evento(articulos_completos)
+                if resultado:
+                    titulo, resumen = resultado
+                    actualizar_resumen_evento(evento_id, titulo, resumen)
+                    log.info(f"  [Resumen] OK — \"{titulo[:60]}...\"")
+                else:
+                    log.info(f"  [Resumen] No se generó (ver advertencia arriba si la hay).")
+            except Exception as e:
+                log.warning(f"  [Resumen] Falló, el evento se queda sin resumen: {e}")
 
     # ── Paso 4: Segmentación para Fase 4 ─────────────────────
     # Segmentar automáticamente los artículos nuevos en oraciones
