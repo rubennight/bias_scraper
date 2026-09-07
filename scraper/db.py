@@ -386,6 +386,26 @@ def obtener_articulos_evento(evento_id: int) -> list:
     ]
 
 
+def obtener_eventos_sin_resumen() -> list:
+    """
+    Retorna id y titular actual de los eventos que todavía no tienen
+    resumen (resumen IS NULL) — usado por backfill_resumenes.py para
+    generarlo una vez sobre eventos que ya existían antes de que
+    summarizer.py se integrara al pipeline.
+    """
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT id, titular_evento FROM eventos
+        WHERE resumen IS NULL
+        ORDER BY id;
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [{"id": r[0], "titular_evento": r[1]} for r in rows]
+
+
 def actualizar_resumen_evento(evento_id: int, titulo: str, resumen: str):
     """
     Guarda el título y resumen generados por DeepSeek. Sobreescribe
