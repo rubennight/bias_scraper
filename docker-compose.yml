@@ -14,6 +14,11 @@ services:
       - PORT=3001
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - SCRAPER_API_KEY=${SCRAPER_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      # Necesario para que la cookie de sesión salga con Secure — sin
+      # esto el login no rompe, pero la cookie no se marcaría Secure
+      # y quedaría mandándose también por HTTP en vez de solo HTTPS.
+      - NODE_ENV=production
 
   web:
     build:

@@ -13,17 +13,18 @@ const { Readable } = require("stream");
 const SCRAPER_URL = process.env.SCRAPER_URL || "http://scraper:8000";
 const CONNECT_TIMEOUT_MS = 10000;
 
-// Nota de seguridad: esta ruta pública (/api/scraper/run) NO requiere
-// X-API-Key del navegador — el frontend no tiene forma segura de
-// guardar un secreto (cualquier variable VITE_* queda visible en el
-// JS compilado). Es consistente con el resto de esta API, que
-// tampoco tiene autenticación (proyecto personal de tesis, sin login).
+// Nota de seguridad: esta ruta ya vuelve a estar protegida de cara al
+// navegador — ahora vía sesión de usuario (requireAuth + requireRole
+// ("admin"), aplicados en index.js antes de montar este router), no
+// vía un secreto estático expuesto al frontend como se hacía antes.
 //
-// La API key SÍ sigue protegiendo la llamada interna api → scraper
-// (unas líneas abajo, en el fetch a SCRAPER_URL): esa key vive solo
-// en variables de entorno del servidor, nunca llega al navegador, y
-// el contenedor scraper no publica su puerto al host — solo es
-// alcanzable desde api dentro de la red interna de Docker.
+// La API key sigue protegiendo, aparte, la llamada interna api →
+// scraper (unas líneas abajo, en el fetch a SCRAPER_URL): esa key
+// vive solo en variables de entorno del servidor, nunca llega al
+// navegador, y el contenedor scraper no publica su puerto al host —
+// solo es alcanzable desde api dentro de la red interna de Docker.
+// Son dos mecanismos independientes: uno autentica al usuario frente
+// a la API, el otro autentica a la API frente al servicio scraper.
 
 function eventoSSE(payload) {
   return `data: ${JSON.stringify(payload)}\n\n`;

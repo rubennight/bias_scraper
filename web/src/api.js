@@ -5,13 +5,26 @@ import axios from "axios";
 // configurar nada.
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
+// withCredentials: true — la sesión vive en una cookie httpOnly, no en
+// localStorage (ver AuthContext.jsx). Sin esto el navegador nunca
+// manda ni recibe la cookie en las peticiones cross-origin hacia la
+// API (frontend y api viven en subdominios distintos en producción).
 const api = axios.create({
   baseURL: API_URL,
+  withCredentials: true,
 });
 
-// Scraper — usa fetch nativo porque la respuesta es un stream SSE
+// Scraper — usa fetch nativo porque la respuesta es un stream SSE.
+// credentials: "include" es el equivalente de withCredentials para
+// fetch nativo — sin esto la cookie de sesión no viaja y la ruta
+// (protegida, solo admin) respondería 401.
 export const runScraper = () =>
-  fetch(`${API_URL}/api/scraper/run`, { method: "POST" });
+  fetch(`${API_URL}/api/scraper/run`, { method: "POST", credentials: "include" });
+
+// Autenticación
+export const login  = (usuario, password) => api.post("/api/auth/login", { usuario, password });
+export const logout = ()                  => api.post("/api/auth/logout");
+export const getMe  = ()                  => api.get("/api/auth/me");
 
 // Corpus
 export const getStats       = ()       => api.get("/api/stats");
