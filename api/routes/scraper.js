@@ -13,26 +13,17 @@ const { Readable } = require("stream");
 const SCRAPER_URL = process.env.SCRAPER_URL || "http://scraper:8000";
 const CONNECT_TIMEOUT_MS = 10000;
 
-// Middleware de autenticación por API key — solo para este router.
-// Esta ruta dispara el pipeline pesado (scraping + NLP con
-// transformers/torch); expuesta sin protección, cualquiera podría
-// forzar corridas repetidas y saturar un servidor sin GPU.
-function requireApiKey(req, res, next) {
-  const esperado = process.env.SCRAPER_API_KEY;
-  const recibido = req.header("X-API-Key");
-
-  if (!esperado) {
-    // Falta configurar la key en el servidor — no abrir la ruta por defecto.
-    console.error("[Scraper] SCRAPER_API_KEY no está configurada en el entorno.");
-    return res.status(500).json({ error: "El servidor no tiene configurada la autenticación del scraper" });
-  }
-
-  if (recibido !== esperado) {
-    return res.status(401).json({ error: "API key inválida o ausente — envía el header X-API-Key" });
-  }
-
-  next();
-}
+// Nota de seguridad: esta ruta pública (/api/scraper/run) NO requiere
+// X-API-Key del navegador — el frontend no tiene forma segura de
+// guardar un secreto (cualquier variable VITE_* queda visible en el
+// JS compilado). Es consistente con el resto de esta API, que
+// tampoco tiene autenticación (proyecto personal de tesis, sin login).
+//
+// La API key SÍ sigue protegiendo la llamada interna api → scraper
+// (unas líneas abajo, en el fetch a SCRAPER_URL): esa key vive solo
+// en variables de entorno del servidor, nunca llega al navegador, y
+// el contenedor scraper no publica su puerto al host — solo es
+// alcanzable desde api dentro de la red interna de Docker.
 
 function eventoSSE(payload) {
   return `data: ${JSON.stringify(payload)}\n\n`;
@@ -44,7 +35,7 @@ function horaActual() {
 
 // POST /api/scraper/run
 // Reenvía la corrida al servicio scraper y streamea sus logs (SSE)
-router.post("/run", requireApiKey, async (req, res) => {
+router.post("/run", async (req, res) => {
   console.log(`[Scraper] Solicitando corrida a ${SCRAPER_URL}/run ...`);
 
   // Headers para SSE
