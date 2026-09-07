@@ -56,15 +56,20 @@ log = logging.getLogger(__name__)
 def ejecutar():
     inicio = datetime.now()
 
-    # Ventana ISO de la semana actual — lunes a domingo
-    # Basada en la fecha de HOY, no en la fecha de publicación.
-    # Los artículos se asignarán a su semana ISO por fecha_pub
-    # dentro de clustering.py. Aquí solo calculamos la ventana
-    # activa para esta ejecución.
-    ventana_inicio, ventana_fin = get_semana_iso(date.today())
+    # Ventana ISO de la semana ANTERIOR (ya completa) — lunes a domingo.
+    # Se usa la semana anterior, no la actual, para que el pipeline
+    # produzca el mismo resultado sin importar qué día se ejecute: si
+    # se usara la semana en curso, correrlo un lunes por la mañana
+    # solo encontraría las horas de ese lunes en RSS (la semana apenas
+    # empieza), mientras que correrlo un domingo encontraría casi toda
+    # la semana — el volumen de artículos dependería del día de
+    # ejecución en vez de reflejar cobertura real de una semana.
+    # Los artículos se asignarán a su semana ISO por fecha_pub dentro
+    # de clustering.py. Aquí solo calculamos la ventana activa.
+    ventana_inicio, ventana_fin = get_semana_iso(date.today() - timedelta(days=7))
 
-    # Semana ISO número para el log
-    iso_year, iso_week, _ = date.today().isocalendar()
+    # Semana ISO número para el log (de la ventana analizada, no de hoy)
+    iso_year, iso_week, _ = ventana_inicio.isocalendar()
 
     log.info("=" * 60)
     log.info("BIAS SCRAPER — Pipeline KDD")

@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { getEventos, buscarEventos } from "../api";
+import { ordenOrientaciones } from "../orientaciones";
 
-const ORDER = ["izquierda", "critico", "centro", "derecha"];
 const LIMIT = 15;
 
 export default function Eventos() {
@@ -179,10 +179,10 @@ export default function Eventos() {
                   </div>
                   <div className="evento-card-side">
                     <div className="evento-spec">
-                      {ORDER.map(k => {
+                      {ordenOrientaciones(Object.keys(counts)).map(k => {
                         const v = counts[k] || 0;
                         if (!v) return null;
-                        return <div key={k} style={{ flex: v / tot, background: `var(--${k})` }} />;
+                        return <div key={k} style={{ flex: v / tot, background: `var(--${k}, var(--orientacion-fallback))` }} />;
                       })}
                     </div>
                     <div className="evento-counts">

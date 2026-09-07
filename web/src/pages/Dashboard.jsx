@@ -1,19 +1,17 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { getStats, getEventos } from "../api";
-
-const ORDER = [
-  { k: "izquierda", lab: "Izquierda" },
-  { k: "critico",   lab: "Crítico"   },
-  { k: "centro",    lab: "Centro"    },
-  { k: "derecha",   lab: "Derecha"   },
-];
+import { ordenOrientaciones, labelOrientacion } from "../orientaciones";
 
 const ROTATE_MS = 6000;
 const FADE_MS   = 550;
 
 function Spectrum({ counts }) {
-  const total = ORDER.reduce((s, o) => s + (counts?.[o.k] || 0), 0) || 1;
+  // Derivado de las claves realmente presentes en counts, no de una
+  // lista fija — así una orientación como "regional" no desaparece
+  // del total ni del gráfico.
+  const claves = ordenOrientaciones(Object.keys(counts || {}));
+  const total = Object.values(counts || {}).reduce((s, v) => s + (v || 0), 0) || 1;
   return (
     <div>
       <div className="spec-head">
@@ -21,20 +19,20 @@ function Spectrum({ counts }) {
         <span>n = {total}</span>
       </div>
       <div className="spec-bar">
-        {ORDER.map(o => {
-          const v = counts?.[o.k] || 0;
+        {claves.map(k => {
+          const v = counts?.[k] || 0;
           if (!v) return null;
-          return <div key={o.k} style={{ flex: v, background: `var(--${o.k})` }} />;
+          return <div key={k} style={{ flex: v, background: `var(--${k}, var(--orientacion-fallback))` }} />;
         })}
       </div>
       <div className="spec-grid">
-        {ORDER.map(o => {
-          const v = counts?.[o.k] || 0;
+        {claves.map(k => {
+          const v = counts?.[k] || 0;
           const pct = ((v / total) * 100).toFixed(0);
           return (
-            <div key={o.k} className="spec-cell">
-              <div className="top" style={{ background: `var(--${o.k})` }} />
-              <div className="lab">{o.lab}</div>
+            <div key={k} className="spec-cell">
+              <div className="top" style={{ background: `var(--${k}, var(--orientacion-fallback))` }} />
+              <div className="lab">{labelOrientacion(k)}</div>
               <div className="num">{v}</div>
               <div className="pct">{pct}%</div>
             </div>
@@ -242,7 +240,7 @@ export default function Dashboard() {
                 <div className="fuente-track">
                   <div className="fuente-fill" style={{
                     width: `${(parseInt(f.total) / maxF) * 100}%`,
-                    background: `var(--${f.orientacion})`,
+                    background: `var(--${f.orientacion}, var(--orientacion-fallback))`,
                   }} />
                 </div>
               </div>
@@ -293,10 +291,10 @@ export default function Dashboard() {
                   </div>
                   <div className="evento-card-side">
                     <div className="evento-spec">
-                      {ORDER.map(o => {
-                        const v = counts[o.k] || 0;
+                      {ordenOrientaciones(Object.keys(counts)).map(k => {
+                        const v = counts[k] || 0;
                         if (!v) return null;
-                        return <div key={o.k} style={{ flex: v / tot, background: `var(--${o.k})` }} />;
+                        return <div key={k} style={{ flex: v / tot, background: `var(--${k}, var(--orientacion-fallback))` }} />;
                       })}
                     </div>
                     <div className="evento-counts">

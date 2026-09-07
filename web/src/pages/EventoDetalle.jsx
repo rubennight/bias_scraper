@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getEvento, anotarArticulo, getActoresEvento } from "../api";
-
-const ORDER = [
-  { k: "izquierda", lab: "Izquierda" },
-  { k: "critico",   lab: "Crítico"   },
-  { k: "centro",    lab: "Centro"    },
-  { k: "derecha",   lab: "Derecha"   },
-];
+import { ordenOrientaciones, labelOrientacion } from "../orientaciones";
 
 function fmtFecha(str) {
   if (!str) return "—";
@@ -237,18 +231,28 @@ export default function EventoDetalle() {
 
   if (!evento) return null;
 
-  const counts = evento.orientaciones || ORDER.reduce((acc, o) => {
-    acc[o.k] = (evento.fuentes || [])
-      .filter(f => f.orientacion === o.k)
+  // Derivado de lo que realmente existe en los datos — no de una
+  // lista fija de 4 orientaciones. Combina las claves de evento.fuentes
+  // y las de evento.orientaciones (si el backend ya manda el agregado)
+  // por si difieren, para no perder ninguna.
+  const orientacionesPresentes = ordenOrientaciones([
+    ...(evento.fuentes || []).map(f => f.orientacion),
+    ...Object.keys(evento.orientaciones || {}),
+  ]);
+
+  const counts = evento.orientaciones || orientacionesPresentes.reduce((acc, k) => {
+    acc[k] = (evento.fuentes || [])
+      .filter(f => f.orientacion === k)
       .reduce((s, f) => s + (f.articulos?.length || 0), 0);
     return acc;
   }, {});
   const total = Object.values(counts).reduce((a, b) => a + (b || 0), 0) || 1;
 
-  const fuentesByOrient = ORDER.map(o => {
-    const fuentes = (evento.fuentes || []).filter(f => f.orientacion === o.k);
+  const fuentesByOrient = orientacionesPresentes.map(k => {
+    const fuentes = (evento.fuentes || []).filter(f => f.orientacion === k);
     return {
-      ...o,
+      k,
+      lab: labelOrientacion(k),
       fuentes,
       arts: fuentes.reduce((s, f) => s + (f.articulos?.length || 0), 0),
     };
@@ -318,21 +322,21 @@ export default function EventoDetalle() {
           <span className="sec-meta">n = {total} artículos</span>
         </div>
         <div className="spec-bar" style={{ height: 10 }}>
-          {ORDER.map(o => {
-            const v = counts[o.k] || 0;
+          {orientacionesPresentes.map(k => {
+            const v = counts[k] || 0;
             if (!v) return null;
-            return <div key={o.k} style={{ flex: v, height: 10, background: `var(--${o.k})` }} />;
+            return <div key={k} style={{ flex: v, height: 10, background: `var(--${k}, var(--orientacion-fallback))` }} />;
           })}
         </div>
         <div className="spec-grid">
-          {ORDER.map(o => {
-            const v = counts[o.k] || 0;
+          {orientacionesPresentes.map(k => {
+            const v = counts[k] || 0;
             const pct = ((v / total) * 100).toFixed(0);
-            const fuentes = fuentesByOrient.find(x => x.k === o.k).fuentes.length;
+            const fuentes = fuentesByOrient.find(x => x.k === k).fuentes.length;
             return (
-              <div key={o.k} className="spec-cell">
-                <div className="top" style={{ background: `var(--${o.k})`, width: 48 }} />
-                <div className="lab">{o.lab}</div>
+              <div key={k} className="spec-cell">
+                <div className="top" style={{ background: `var(--${k}, var(--orientacion-fallback))`, width: 48 }} />
+                <div className="lab">{labelOrientacion(k)}</div>
                 <div className="num" style={{ fontSize: 32 }}>{v}</div>
                 <div className="pct">{pct}% · {fuentes} fuentes</div>
               </div>

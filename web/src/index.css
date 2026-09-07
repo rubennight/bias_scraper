@@ -18,10 +18,13 @@
   --graphite:#7a7468;
 
   /* política */
-  --izquierda: var(--rev);
-  --critico:   var(--ochre);
-  --centro:    var(--graphite);
-  --derecha:   var(--ink);
+  --izquierda:       var(--rev);
+  --critico:         var(--ochre);
+  --centro:          var(--graphite);
+  --centro-derecha:  #3d3a33;   /* entre --centro y --derecha */
+  --derecha:         var(--ink);
+  --regional:        #5b7a8c;   /* fuera del eje izq-der: medios locales */
+  --orientacion-fallback: #9a9284; /* cualquier orientación futura no listada */
 
   /* legacy aliases (existing components) */
   --red:       var(--rev);
@@ -303,11 +306,17 @@ button { font-family: inherit; cursor: pointer; }
 .fuentes-list { display: flex; flex-direction: column; gap: 14px; }
 .fuente-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: baseline; }
 .fuente-head { display: flex; align-items: center; gap: 12px; }
-.orientacion-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-.dot-izquierda { background: var(--izquierda); }
-.dot-critico   { background: var(--critico); }
-.dot-centro    { background: var(--centro); }
-.dot-derecha   { background: var(--derecha); }
+/* background por defecto = fallback; las reglas .dot-<clave> más
+   específicas de abajo lo sobreescriben para las orientaciones conocidas.
+   Cualquier orientación nueva en la BD sigue viéndose (gris neutro)
+   en vez de quedar sin color. */
+.orientacion-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--orientacion-fallback); }
+.dot-izquierda      { background: var(--izquierda); }
+.dot-critico        { background: var(--critico); }
+.dot-centro         { background: var(--centro); }
+.dot-centro-derecha { background: var(--centro-derecha); }
+.dot-derecha        { background: var(--derecha); }
+.dot-regional       { background: var(--regional); }
 .fuente-name { font-size: 15px; font-weight: 500; }
 .fuente-num  { font-size: 13px; font-weight: 600; color: var(--ink-3); }
 .fuente-track {
