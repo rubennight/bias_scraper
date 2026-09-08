@@ -14,7 +14,7 @@ import io
 import os
 import sys
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from config import FUENTES
 from db import (
     crear_tablas,
@@ -63,17 +63,30 @@ log = logging.getLogger(__name__)
 def ejecutar():
     inicio = datetime.now()
 
-    # Ventana ISO de la semana ANTERIOR (ya completa) — lunes a domingo.
-    # Se usa la semana anterior, no la actual, para que el pipeline
-    # produzca el mismo resultado sin importar qué día se ejecute: si
-    # se usara la semana en curso, correrlo un lunes por la mañana
-    # solo encontraría las horas de ese lunes en RSS (la semana apenas
-    # empieza), mientras que correrlo un domingo encontraría casi toda
-    # la semana — el volumen de artículos dependería del día de
-    # ejecución en vez de reflejar cobertura real de una semana.
-    # Los artículos se asignarán a su semana ISO por fecha_pub dentro
-    # de clustering.py. Aquí solo calculamos la ventana activa.
-    ventana_inicio, ventana_fin = get_semana_iso(date.today() - timedelta(days=7))
+    # Ventana ISO de la semana ACTUAL — lunes a domingo, basada en HOY.
+    #
+    # Se usó la semana ANTERIOR (date.today() - 7 días) entre el
+    # 2026-09-06 y el 2026-09-08 buscando resultados deterministas sin
+    # importar qué día se ejecute el pipeline. Se revirtió: los feeds
+    # RSS de los medios retienen muy pocas horas de contenido — Reforma
+    # ~15h, El Universal ~8h, la mayoría bajo 2 días — muy por debajo de
+    # los hasta 13 días de antigüedad que puede tener "la semana
+    # anterior" dependiendo de qué día del ciclo actual se corra. Para
+    # cuando el pipeline pedía esa ventana, la mayoría de los feeds ya
+    # habían rotado ese contenido por completo: no es que fallara el
+    # scraping, el artículo ya no estaba en el RSS. Se confirmó en vivo
+    # (2026-09-07): la misma ventana pasó de 365 candidatos a las 08:15
+    # a solo 53 a las 22:24, mismo día, por pura rotación de los feeds.
+    #
+    # El problema que motivó el cambio original (correr a mitad de
+    # semana da resultados parciales/no deterministas) ya lo resuelve
+    # mejor articulos_candidatos (ver db.py y
+    # docs/bitacora/2026-09-07-candidatos-pendientes.md): los artículos
+    # sin evento válido se acumulan entre corridas en vez de perderse,
+    # así que correr sobre la semana en curso ya no arriesga perder
+    # cobertura por depender de que la semana haya cerrado — solo hace
+    # falta esperar suficientes corridas dentro de esa misma ventana.
+    ventana_inicio, ventana_fin = get_semana_iso(date.today())
 
     # Semana ISO número para el log (de la ventana analizada, no de hoy)
     iso_year, iso_week, _ = ventana_inicio.isocalendar()

@@ -75,7 +75,17 @@ Se corrió el pipeline en vivo dentro del contenedor `bias-scraper-pipeline` (ve
 
 **Corrida 3 (2026-09-07 22:24-22:29, la misma disparada por el sistema):** de los 8 artículos nuevos enviados a scraping, ninguno logró extraer keywords exitosamente (fuentes flakeantes: El Financiero timeout en Playwright, Animal Político sin keywords). Resultado: `articulos_candidatos` se mantuvo estable en **6 filas** (mismas de la corrida 1), con `veces_visto` incrementado limpiamente de 2 a 3 — sin duplicados, sin pérdida. Confirma que el mecanismo es estable ante corridas sucesivas que no aportan candidatos nuevos.
 
-### 7. Trabajo futuro / pendiente
+### 7. Adenda 2026-09-08 — Revertir "semana anterior", volver a "semana actual"
+
+Después de este cambio se investigó por qué el pipeline procesaba muchos menos artículos que antes (hasta 100 por corrida vs. unas pocas decenas). Causa: el commit `be4b08c` (2026-09-06) había cambiado la ventana de análisis de la semana **actual** a la semana **anterior ya cerrada**, buscando resultados deterministas sin importar qué día se ejecutara el pipeline.
+
+Ese cambio no contaba con que los feeds RSS de los medios retienen muy pocas horas de contenido — medido en vivo el 2026-09-07: Reforma ~15h (10 items), El Universal ~8h (100 items publicados muy rápido), El Financiero ~30h, Animal Político ~3.5 días. Muy por debajo de los hasta 13 días de antigüedad que puede tener "la semana anterior" según qué día del ciclo corra el pipeline. Para cuando el pipeline pedía esa ventana, la mayoría de los feeds ya habían rotado ese contenido — no es que el scraping fallara, el artículo ya no estaba en el RSS. Se confirmó con dos corridas el mismo día sobre la misma ventana ISO: 365 candidatos a las 08:15 → 53 candidatos a las 22:24.
+
+El problema que motivó el cambio a "semana anterior" (correr a mitad de semana da resultados parciales) ya lo resuelve mejor la persistencia de `articulos_candidatos` de este mismo cambio: los artículos sin evento válido ya no se pierden entre corridas, así que la cobertura de una semana se sigue acumulando corrida a corrida sin necesidad de esperar a que cierre. Se revirtió `pipeline.py` a `get_semana_iso(date.today())` (semana en curso).
+
+**Archivo modificado:** `scraper/pipeline.py`
+
+### 8. Trabajo futuro / pendiente
 
 - Investigar por qué `politica.expansion.mx` (Animal Político) falla sistemáticamente tanto con Newspaper3k como con el fallback de Playwright.
 - Paralelizar `extraer_keywords_todos()` (hoy secuencial con `time.sleep(DELAY_SCRAPER)` entre cada artículo) — cada corrida tarda 15-20 minutos casi todo en I/O de red serializado.
