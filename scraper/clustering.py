@@ -297,7 +297,8 @@ def filtrar_eventos_validos(clusters: list) -> list:
 
 # ── Función principal ─────────────────────────────────────────
 
-def detectar_eventos(ventana_inicio: date, ventana_fin: date) -> list:
+def detectar_eventos(ventana_inicio: date, ventana_fin: date,
+                      candidatos_previos: list | None = None) -> tuple:
     """
     Pipeline KDD completo para una semana ISO.
 
@@ -309,36 +310,57 @@ def detectar_eventos(ventana_inicio: date, ventana_fin: date) -> list:
     fecha de ejecución del pipeline. Esto elimina el solapamiento
     entre ejecuciones consecutivas que generaba eventos duplicados.
 
+    candidatos_previos: artículos que en corridas anteriores de esta
+    misma ventana ISO ya pasaron scraping (tienen keywords) pero no
+    lograron cobertura de MIN_FUENTES_POR_EVENTO. Se sacan de la BD
+    (articulos_candidatos, ver db.py) y se re-incorporan al pool que
+    entra al grafo — así una fuente que publica su versión del hecho
+    varias horas después todavía puede conectarse con la de la
+    corrida anterior, en vez de depender de que las 3 fuentes salgan
+    dentro de la misma ejecución del pipeline. Sus URLs ya conocidas
+    NO se vuelven a scrapear.
+
     Fase 1: recolectar_articulos() + filtrar_por_tema()
     Fase 3: extraer_keywords_todos() → construir_grafo_eventos()
             → componentes_conectadas() → filtrar_eventos_validos()
+
+    Retorna (eventos_validos, articulos_huerfanos) — huerfanos son
+    los artículos del pool (nuevos + previos) que tampoco lograron
+    evento esta vez y deben volver a guardarse como candidatos
+    pendientes (pipeline.py hace ese guardado).
     """
+    candidatos_previos = candidatos_previos or []
+
     iso_year, iso_week, _ = ventana_inicio.isocalendar()
     log.info(f"[Pipeline] Semana ISO {iso_year}-W{iso_week:02d}: {ventana_inicio} → {ventana_fin}")
+    if candidatos_previos:
+        log.info(f"[Pipeline] {len(candidatos_previos)} candidatos pendientes de corridas anteriores")
 
     articulos = recolectar_articulos(ventana_inicio, ventana_fin)
-    if not articulos:
-        log.info("[Pipeline] Sin artículos en la ventana.")
-        return []
-
     articulos = filtrar_por_tema(articulos)
-    if not articulos:
-        log.info("[Pipeline] Sin artículos relevantes tras filtrado.")
-        return []
 
-    articulos = extraer_keywords_todos(articulos)
-    if not articulos:
-        log.info("[Pipeline] Sin artículos con keywords.")
-        return []
+    previos_por_url = {c["url"]: c for c in candidatos_previos}
+    nuevos = [a for a in articulos if a["url"] not in previos_por_url]
+    nuevos_con_kw = extraer_keywords_todos(nuevos) if nuevos else []
 
-    grafo = construir_grafo_eventos(articulos)
+    pool = list(previos_por_url.values()) + nuevos_con_kw
+    if not pool:
+        log.info("[Pipeline] Sin artículos (nuevos ni pendientes) en esta ventana.")
+        return [], []
+
+    grafo = construir_grafo_eventos(pool)
     if not grafo:
         log.info("[Pipeline] Sin conexiones entre artículos.")
-        return []
+        return [], pool
 
-    clusters = componentes_conectadas(articulos, grafo)
+    clusters = componentes_conectadas(pool, grafo)
     if not clusters:
         log.info("[Pipeline] Sin clusters detectados.")
-        return []
+        return [], pool
 
-    return filtrar_eventos_validos(clusters)
+    eventos_validos = filtrar_eventos_validos(clusters)
+
+    urls_en_eventos = {a["url"] for ev in eventos_validos for a in ev["articulos"]}
+    huerfanos = [a for a in pool if a["url"] not in urls_en_eventos]
+
+    return eventos_validos, huerfanos

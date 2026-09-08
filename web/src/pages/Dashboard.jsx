@@ -115,7 +115,7 @@ export default function Dashboard() {
     <div className="loading"><div className="spinner" />Cargando estadísticas</div>
   );
 
-  const { totales, porFuente, topKeywords } = stats;
+  const { totales, porFuente } = stats;
   const maxF = Math.max(...porFuente.map(f => parseInt(f.total)), 1);
   const lead = recent[leadIdx];
 
@@ -136,10 +136,6 @@ export default function Dashboard() {
             Recolección, agrupamiento y análisis de la cobertura periodística sobre un mismo
             hecho, a través de fuentes distribuidas en el espectro ideológico.
           </p>
-        </div>
-        <div className="page-meta">
-          Última corrida<br/>
-          <b>Hoy</b>
         </div>
       </div>
 
@@ -196,7 +192,6 @@ export default function Dashboard() {
                     <b> {lead.total_articulos} artículos</b> durante la ventana.
                   </>
                 )}
-                {lead.top_keywords?.length > 0 && <> Términos predominantes: <b>{lead.top_keywords.slice(0,3).join(", ")}</b>.</>}
               </p>
             </div>
             <div className={`lead-fade ${phase}`}>
@@ -225,48 +220,29 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* FUENTES + KEYWORDS */}
-      <section className="row-2">
-        <div>
-          <div className="sec-head">
-            <span className="sec-num">02</span>
-            <h2 className="sec-title">Por <em>fuente</em></h2>
-            <span className="sec-meta">{porFuente.length} activas</span>
-          </div>
-          <div className="fuentes-list">
-            {porFuente.map(f => (
-              <div className="fuente-row" key={f.nombre}>
-                <div className="fuente-head">
-                  <span className={`orientacion-dot dot-${f.orientacion}`} />
-                  <span className="fuente-name">{f.nombre}</span>
-                </div>
-                <span className="fuente-num">{f.total}</span>
-                <div className="fuente-track">
-                  <div className="fuente-fill" style={{
-                    width: `${(parseInt(f.total) / maxF) * 100}%`,
-                    background: `var(--${f.orientacion}, var(--orientacion-fallback))`,
-                  }} />
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* FUENTES */}
+      <section className="sec">
+        <div className="sec-head">
+          <span className="sec-num">02</span>
+          <h2 className="sec-title">Por <em>fuente</em></h2>
+          <span className="sec-meta">{porFuente.length} activas</span>
         </div>
-
-        <div>
-          <div className="sec-head">
-            <span className="sec-num">03</span>
-            <h2 className="sec-title">Léxico <em>predominante</em></h2>
-            <span className="sec-meta">top {topKeywords.length}</span>
-          </div>
-          <div className="kw-list">
-            {topKeywords.map((k, i) => (
-              <div className="kw-row" key={k.keyword}>
-                <span className="kw-rank">{String(i + 1).padStart(2, '0')}</span>
-                <span className="kw-word">{k.keyword}</span>
-                <span className="kw-num">{k.frecuencia}</span>
+        <div className="fuentes-list">
+          {porFuente.map(f => (
+            <div className="fuente-row" key={f.nombre}>
+              <div className="fuente-head">
+                <span className={`orientacion-dot dot-${f.orientacion}`} />
+                <span className="fuente-name">{f.nombre}</span>
               </div>
-            ))}
-          </div>
+              <span className="fuente-num">{f.total}</span>
+              <div className="fuente-track">
+                <div className="fuente-fill" style={{
+                  width: `${(parseInt(f.total) / maxF) * 100}%`,
+                  background: `var(--${f.orientacion}, var(--orientacion-fallback))`,
+                }} />
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -274,7 +250,7 @@ export default function Dashboard() {
       {recent.length > 0 && (
         <section className="eventos-section">
           <div className="sec-head">
-            <span className="sec-num">04</span>
+            <span className="sec-num">03</span>
             <h2 className="sec-title">Eventos <em>recientes</em></h2>
             <span className="sec-meta">{recent.length} de {totales.total_eventos}</span>
           </div>

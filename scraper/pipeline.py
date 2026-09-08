@@ -28,6 +28,10 @@ from db import (
     actualizar_num_fuentes,
     obtener_articulos_evento,
     actualizar_resumen_evento,
+    guardar_candidatos,
+    obtener_candidatos,
+    eliminar_candidatos,
+    limpiar_candidatos_vencidos,
 )
 from clustering import detectar_eventos, get_semana_iso
 from annotator import segmentar_articulos_nuevos
@@ -94,11 +98,16 @@ def ejecutar():
     # ── Paso 2: KDD Fases 1 y 3 — Detección de eventos ──────
     log.info("\n[2/5] Detectando eventos por clustering semántico...")
     log.info(f"      RSS secciones → filtro temático → keywords TF-IDF → grafo → BFS")
-    eventos = detectar_eventos(ventana_inicio, ventana_fin)
 
-    if not eventos:
-        log.info("[Pipeline] Sin eventos detectados. Terminando.")
-        return
+    eliminados = limpiar_candidatos_vencidos(ventana_inicio)
+    if eliminados:
+        log.info(f"      {eliminados} candidatos de semanas anteriores purgados.")
+
+    candidatos_previos = obtener_candidatos(ventana_inicio, ventana_fin)
+    if candidatos_previos:
+        log.info(f"      {len(candidatos_previos)} candidatos pendientes de corridas anteriores.")
+
+    eventos, huerfanos = detectar_eventos(ventana_inicio, ventana_fin, candidatos_previos)
 
     log.info(f"\n      {len(eventos)} eventos detectados con cobertura multi-fuente.")
 
@@ -107,6 +116,7 @@ def ejecutar():
     total_articulos = 0
     total_guardados = 0
     total_fallidos  = 0
+    urls_promovidas = []
 
     for evento in eventos:
         log.info(f"\n{'─' * 60}")
@@ -148,6 +158,9 @@ def ejecutar():
 
             try:
                 articulo_id = insertar_articulo(evento_id, fuente_id, art)
+                # Sin excepción == la fila ya está en articulos (recién
+                # insertada o ya existía) → se puede retirar de candidatos.
+                urls_promovidas.append(art["url"])
                 if articulo_id:
                     insertar_keywords(articulo_id, art.get("keywords", []))
                     guardados_evento += 1
@@ -183,6 +196,14 @@ def ejecutar():
             except Exception as e:
                 log.warning(f"  [Resumen] Falló, el evento se queda sin resumen: {e}")
 
+    if urls_promovidas:
+        eliminar_candidatos(urls_promovidas)
+        log.info(f"\n[Candidatos] {len(urls_promovidas)} promovidos a evento — retirados de pendientes.")
+
+    if huerfanos:
+        guardar_candidatos(huerfanos, ventana_inicio, ventana_fin)
+        log.info(f"[Candidatos] {len(huerfanos)} artículos sin evento válido — guardados como pendientes.")
+
     # ── Paso 4: Segmentación para Fase 4 ─────────────────────
     # Segmentar automáticamente los artículos nuevos en oraciones
     # con spaCy para que estén listos cuando se inicie la anotación.
@@ -214,6 +235,7 @@ def ejecutar():
     log.info(f"  Artículos extraídos : {total_articulos}")
     log.info(f"  Guardados en BD     : {total_guardados}")
     log.info(f"  Fallidos            : {total_fallidos}")
+    log.info(f"  Candidatos pendientes: {len(huerfanos)}")
     log.info(f"  Duración total      : {str(duracion).split('.')[0]}")
     log.info(f"  Log guardado en     : {_log_path}")
     log.info("=" * 60)

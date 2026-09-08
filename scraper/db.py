@@ -88,6 +88,31 @@ def crear_tablas():
         CREATE INDEX IF NOT EXISTS idx_articulo_kw
             ON articulo_keywords(articulo_id);
 
+        -- Artículos que pasaron scraping (tienen keywords) pero no
+        -- lograron cobertura de MIN_FUENTES_POR_EVENTO en la corrida
+        -- donde se descubrieron. Se guardan aquí en vez de descartarse,
+        -- para que corridas posteriores dentro de la MISMA ventana ISO
+        -- puedan conectarlos con fuentes que todavía no habían publicado
+        -- (ver docs/bitacora/2026-09-07-candidatos-pendientes.md).
+        CREATE TABLE IF NOT EXISTS articulos_candidatos (
+            id             SERIAL PRIMARY KEY,
+            url            TEXT UNIQUE NOT NULL,
+            fuente_nombre  TEXT NOT NULL,
+            titular        TEXT,
+            cuerpo         TEXT,
+            autor          TEXT,
+            fecha_pub      TIMESTAMP,
+            metodo         TEXT,
+            keywords       TEXT[] NOT NULL,
+            ventana_inicio DATE NOT NULL,
+            ventana_fin    DATE NOT NULL,
+            primera_vez    TIMESTAMP DEFAULT NOW(),
+            veces_visto    INT DEFAULT 1
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_candidatos_ventana
+            ON articulos_candidatos(ventana_inicio);
+
         -- ── FASE 4: Anotación A/B/C ──────────────────────────
 
         CREATE TABLE IF NOT EXISTS oraciones (
@@ -359,6 +384,93 @@ def actualizar_num_fuentes(evento_id: int, num_fuentes: int):
     conn.commit()
     cur.close()
     conn.close()
+
+
+def guardar_candidatos(candidatos: list, ventana_inicio: date, ventana_fin: date):
+    """
+    Guarda artículos que ya pasaron scraping (tienen keywords) pero no
+    lograron cobertura de MIN_FUENTES_POR_EVENTO en esta corrida — en vez
+    de descartarlos, quedan disponibles para que corridas futuras dentro
+    de la misma ventana ISO los reconecten con fuentes que aún no habían
+    publicado. Si ya existían, solo se marca que se volvieron a ver.
+    """
+    if not candidatos:
+        return
+    conn = get_connection()
+    cur  = conn.cursor()
+    for art in candidatos:
+        cur.execute("""
+            INSERT INTO articulos_candidatos
+                (url, fuente_nombre, titular, cuerpo, autor, fecha_pub, metodo,
+                 keywords, ventana_inicio, ventana_fin)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (url) DO UPDATE SET
+                veces_visto = articulos_candidatos.veces_visto + 1;
+        """, (
+            art["url"], art["fuente_nombre"], art.get("titular"),
+            art.get("cuerpo"), art.get("autor"), art.get("fecha_pub"),
+            art.get("metodo"), art.get("keywords", []),
+            ventana_inicio, ventana_fin,
+        ))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def obtener_candidatos(ventana_inicio: date, ventana_fin: date) -> list:
+    """
+    Retorna los candidatos pendientes de corridas anteriores para esta
+    ventana ISO, ya con sus keywords — no hace falta volver a scrapearlos.
+    """
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT url, fuente_nombre, titular, cuerpo, autor, fecha_pub, metodo, keywords
+        FROM articulos_candidatos
+        WHERE ventana_inicio = %s AND ventana_fin = %s;
+    """, (ventana_inicio, ventana_fin))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [
+        {
+            "url": r[0], "fuente_nombre": r[1], "titular": r[2],
+            "cuerpo": r[3], "autor": r[4], "fecha_pub": r[5],
+            "metodo": r[6], "keywords": r[7] or [],
+        }
+        for r in rows
+    ]
+
+
+def eliminar_candidatos(urls: list):
+    """Retira de pendientes los candidatos que ya se promovieron a un evento."""
+    if not urls:
+        return
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM articulos_candidatos WHERE url = ANY(%s);", (urls,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def limpiar_candidatos_vencidos(ventana_inicio_actual: date) -> int:
+    """
+    Purga candidatos de ventanas ISO ya cerradas (semanas anteriores a la
+    actual) — si no lograron evento en toda su semana, no tiene sentido
+    seguir esperando: la próxima semana ya no comparte ventana con ellos.
+    """
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute(
+        "DELETE FROM articulos_candidatos WHERE ventana_inicio < %s;",
+        (ventana_inicio_actual,)
+    )
+    eliminados = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return eliminados
 
 
 def obtener_articulos_evento(evento_id: int) -> list:
