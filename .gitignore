@@ -33,3 +33,7 @@ logs/
 graphify-out/
 .graphify*
 graphify*.json
+
+docs/agente_anotacion_abc.md
+.claude/settings.local.json
+db_dump.json
