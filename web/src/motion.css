@@ -1,0 +1,190 @@
+/* ============================================================
+   motion.css — capa de transiciones y animaciones de bias_scraper.
+   Es aditiva: no redefine el diseño de index.css, solo agrega
+   movimiento. Se importa después de index.css (ver main.jsx).
+
+   Reglas de la casa:
+   - Las animaciones de entrada usan `backwards` (no `both`), así al
+     terminar no queda ningún `transform` pegado que cree un contexto
+     de apilamiento o rompa elementos fixed/sticky descendientes.
+   - Los tooltips solo animan opacidad: ya posicionan con transform
+     inline y una animación de transform los descolocaría.
+   - Todo se apaga con prefers-reduced-motion.
+   ============================================================ */
+
+:root {
+  --ease-out:    cubic-bezier(.22, 1, .36, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+}
+
+@keyframes entradaSuave     { from { opacity: 0; transform: translateY(12px); } }
+@keyframes entradaEscala    { from { opacity: 0; transform: translateY(6px) scale(.985); } }
+@keyframes entradaLateral   { from { opacity: 0; transform: translateX(18px); } }
+@keyframes entradaOpacidad  { from { opacity: 0; } }
+@keyframes brilloPestana {
+  0%, 100% { box-shadow: 0 8px 22px -8px rgba(158, 51, 48, .50); }
+  50%      { box-shadow: 0 10px 30px -6px rgba(158, 51, 48, .75); }
+}
+@keyframes balanceoFoco {
+  0%, 100% { transform: rotate(0); }
+  25%      { transform: rotate(-10deg); }
+  75%      { transform: rotate(10deg); }
+}
+
+/* ── Cambio de página ─────────────────────────────────────
+   PaginaTransicion.jsx envuelve las rutas en .pagina. Al navegar, la
+   página saliente se desvanece (.pagina-sale) y la nueva se monta de
+   nuevo: sus bloques entran con un pequeño retraso escalonado. Lo mismo
+   ocurre cuando una página pasa de "Cargando…" a su contenido. */
+.pagina > * {
+  animation: entradaSuave .6s var(--ease-out) backwards;
+}
+.pagina > *:nth-child(2) { animation-delay: .06s; }
+.pagina > *:nth-child(3) { animation-delay: .12s; }
+.pagina > *:nth-child(4) { animation-delay: .18s; }
+.pagina > *:nth-child(5) { animation-delay: .24s; }
+.pagina > *:nth-child(6) { animation-delay: .30s; }
+.pagina > *:nth-child(n+7) { animation-delay: .36s; }
+
+/* Duración = MS_SALIDA en PaginaTransicion.jsx. `forwards` mantiene la
+   página invisible hasta que el componente la reemplaza. */
+.pagina-sale {
+  animation: salidaSuave .22s var(--ease-in-out) forwards;
+  pointer-events: none;
+}
+@keyframes salidaSuave { to { opacity: 0; transform: translateY(-8px); } }
+
+.app-foot { animation: entradaOpacidad .8s ease-out .3s backwards; }
+
+/* ── Navegación ───────────────────────────────────────── */
+.nav-link {
+  transition: color .25s var(--ease-out), border-color .25s var(--ease-out);
+}
+.nav-brand-mark {
+  transition: transform .5s var(--ease-out);
+}
+.nav-brand:hover .nav-brand-mark { transform: scale(1.12) rotate(12deg); }
+
+/* ── Botones ──────────────────────────────────────────────
+   Elevación mínima al pasar el cursor y "hundimiento" al pulsar.
+   Excluye los deshabilitados. */
+.main-content button:not(:disabled) {
+  transition:
+    transform .2s var(--ease-out),
+    background-color .2s ease,
+    border-color .2s ease,
+    color .2s ease,
+    box-shadow .2s ease,
+    filter .2s ease,
+    opacity .2s ease;
+}
+.main-content button:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+.main-content button:not(:disabled):active {
+  transform: translateY(0) scale(.97);
+  filter: brightness(.97);
+}
+
+/* ── Campos de formulario ─────────────────────────────── */
+.main-content :is(input, select, textarea) {
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.main-content :is(input, select, textarea):focus {
+  outline: none;
+  border-color: var(--rev) !important;
+  box-shadow: 0 0 0 3px rgba(158, 51, 48, .14);
+}
+.main-content button:focus-visible {
+  outline: 2px solid var(--rev);
+  outline-offset: 2px;
+}
+
+/* ── Tarjetas ─────────────────────────────────────────── */
+.card {
+  transition:
+    transform .3s var(--ease-out),
+    box-shadow .3s ease,
+    border-color .3s ease,
+    background-color .25s ease;
+}
+.card:hover {
+  border-color: var(--ink-3);
+  box-shadow: 0 14px 32px -18px rgba(32, 29, 26, .35);
+}
+.evento-card { transition: background-color .25s ease; }
+
+/* ── Pantalla de anotación ────────────────────────────── */
+.vista-enter    { animation: entradaSuave  .45s var(--ease-out) backwards; }
+.oracion-enter  { animation: entradaEscala .40s var(--ease-out) backwards; }
+.elementos-enter{ animation: entradaEscala .35s var(--ease-out) backwards; }
+.tip-in         { animation: entradaOpacidad .16s ease-out backwards; }
+.fila-enter     { animation: entradaSuave  .40s var(--ease-out) backwards;
+                  animation-delay: calc(var(--i, 0) * 35ms); }
+
+/* Panel de ejemplos */
+.ej-panel { animation: entradaLateral .45s var(--ease-out) backwards; }
+.ej-card  { animation: entradaSuave   .40s var(--ease-out) backwards;
+            animation-delay: calc(var(--i, 0) * 70ms); }
+
+.ej-cabecera {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; letter-spacing: -.01em;
+}
+.ej-cabecera svg { color: var(--rev); }
+
+.ej-cerrar {
+  width: 26px; height: 26px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid #ddd; background: transparent;
+  color: #888; font-family: inherit; font-size: 14px; cursor: pointer;
+}
+.main-content button.ej-cerrar:not(:disabled):hover {
+  background: var(--rev); border-color: var(--rev); color: #fff;
+  transform: rotate(90deg);
+}
+
+/* Pestaña con la que se vuelve a abrir el panel */
+.main-content button.ej-tab {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  position: sticky;
+  top: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 16px 11px;
+  border: none;
+  border-radius: 16px 6px 6px 16px;
+  background: linear-gradient(160deg, var(--rev) 0%, var(--rev-2) 100%);
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 8px 22px -8px rgba(158, 51, 48, .5);
+  animation: entradaLateral .5s var(--ease-out) backwards, brilloPestana 3.2s ease-in-out 1s infinite;
+}
+.ej-tab-texto {
+  writing-mode: vertical-rl;
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase;
+}
+.main-content button.ej-tab:not(:disabled):hover {
+  transform: translateX(-4px);
+  filter: brightness(1.08);
+}
+.main-content button.ej-tab:not(:disabled):hover svg {
+  animation: balanceoFoco .6s ease-in-out;
+}
+.main-content button.ej-tab:not(:disabled):active {
+  transform: translateX(-2px) scale(.97);
+}
+
+/* ── Accesibilidad: sin movimiento si el sistema lo pide ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
