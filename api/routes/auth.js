@@ -22,6 +22,7 @@ const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const pool = require("../db");
 const { COOKIE_NAME } = require("../middleware/auth");
+const { validarRegistro } = require("../lib/registro");
 
 const JWT_EXPIRES_IN = "10h";
 const COOKIE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
@@ -44,6 +45,29 @@ const loginLimiter = rateLimit({
   // este límite sea por cliente real y no por IP del proxy.
   message: { error: "Demasiados intentos de inicio de sesión. Espera unos minutos." },
 });
+
+// El registro es público: se limita por IP para frenar el alta masiva
+// de solicitudes basura.
+const registroLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Demasiados registros desde esta conexión. Intenta más tarde." },
+});
+
+// Datos de sesión que ve el frontend — nunca incluye email ni celular.
+function datosSesion(fila) {
+  return {
+    id: fila.id,
+    usuario: fila.usuario,
+    rol: fila.rol,
+    anotador_id: fila.anotador_id ?? null,
+    anotador: fila.anotador_id
+      ? { id: fila.anotador_id, nombre: fila.anotador_nombre }
+      : null,
+  };
+}
 
 function cookieOptions() {
   return {
@@ -69,8 +93,15 @@ router.post("/login", loginLimiter, async (req, res) => {
       return res.status(400).json({ error: "Usuario y contraseña son obligatorios" });
     }
 
+    // Se acepta el usuario o el email (las cuentas registradas entran
+    // con su email, que se guarda en minúsculas).
     const result = await pool.query(
-      "SELECT id, usuario, password_hash, rol FROM usuarios WHERE usuario = $1",
+      `SELECT u.id, u.usuario, u.password_hash, u.rol, u.estado, u.anotador_id,
+              a.nombre AS anotador_nombre
+       FROM usuarios u
+       LEFT JOIN anotadores a ON a.id = u.anotador_id
+       WHERE u.usuario = $1 OR lower(u.email) = lower($1)
+       LIMIT 1`,
       [usuario]
     );
     const fila = result.rows[0];
@@ -84,14 +115,24 @@ router.post("/login", loginLimiter, async (req, res) => {
       return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
     }
 
+    // El estado se revisa DESPUÉS de validar la contraseña: con una
+    // contraseña incorrecta la respuesta es siempre el 401 genérico, así
+    // no se puede averiguar si una cuenta está pendiente o rechazada.
+    if (fila.estado === "pendiente") {
+      return res.status(403).json({ error: "Tu cuenta está pendiente de aprobación" });
+    }
+    if (fila.estado === "rechazado") {
+      return res.status(403).json({ error: "Tu solicitud fue rechazada" });
+    }
+
     const token = jwt.sign(
-      { id: fila.id, usuario: fila.usuario, rol: fila.rol },
+      { id: fila.id, usuario: fila.usuario, rol: fila.rol, anotador_id: fila.anotador_id ?? null },
       process.env.JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
 
     res.cookie(COOKIE_NAME, token, { ...cookieOptions(), maxAge: COOKIE_MAX_AGE_MS });
-    res.json({ id: fila.id, usuario: fila.usuario, rol: fila.rol });
+    res.json(datosSesion(fila));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -106,16 +147,54 @@ router.post("/logout", (req, res) => {
 // ── GET /api/auth/me ─────────────────────────────────────────
 // Nunca responde 401 — el frontend la llama al cargar para saber si
 // hay sesión, y "sin sesión" es un estado normal, no un error.
-router.get("/me", (req, res) => {
+// Los datos se leen de la BD (no del token) para que un cambio de
+// perfil o de estado se refleje sin esperar a que expire la sesión.
+router.get("/me", async (req, res) => {
   const token = req.cookies?.[COOKIE_NAME];
   if (!token || !process.env.JWT_SECRET) {
     return res.json({ usuario: null });
   }
   try {
     const datos = jwt.verify(token, process.env.JWT_SECRET);
-    res.json({ usuario: { id: datos.id, usuario: datos.usuario, rol: datos.rol } });
+    const r = await pool.query(
+      `SELECT u.id, u.usuario, u.rol, u.estado, u.anotador_id, a.nombre AS anotador_nombre
+       FROM usuarios u
+       LEFT JOIN anotadores a ON a.id = u.anotador_id
+       WHERE u.id = $1`,
+      [datos.id]
+    );
+    const fila = r.rows[0];
+    if (!fila || fila.estado !== "aprobado") return res.json({ usuario: null });
+    res.json({ usuario: datosSesion(fila) });
   } catch {
     res.json({ usuario: null });
+  }
+});
+
+// ── POST /api/auth/registro ──────────────────────────────────
+// Crea una solicitud (estado 'pendiente'); no puede iniciar sesión hasta
+// que el admin la apruebe. Siempre responde lo mismo si los datos son
+// válidos, exista o no el email, para no revelar qué correos tienen cuenta.
+router.post("/registro", registroLimiter, async (req, res) => {
+  try {
+    const v = validarRegistro(req.body);
+    if (!v.ok) return res.status(400).json({ error: v.errores[0], errores: v.errores });
+
+    const { nombre_completo, email, celular } = v.datos;
+    // El hash se calcula siempre, para que el tiempo no delate duplicados.
+    const hash = await bcrypt.hash(String(req.body.password), 12);
+
+    // ON CONFLICT sin objetivo cubre tanto el usuario como el email únicos.
+    await pool.query(
+      `INSERT INTO usuarios (usuario, password_hash, rol, nombre_completo, email, celular, estado)
+       VALUES ($1, $2, 'anotador', $3, $1, $4, 'pendiente')
+       ON CONFLICT DO NOTHING`,
+      [email, hash, nombre_completo, celular]
+    );
+
+    res.json({ ok: true, mensaje: "Solicitud enviada. Podrás entrar cuando sea aprobada." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
