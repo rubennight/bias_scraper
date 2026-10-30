@@ -42,6 +42,9 @@ app.use("/api/auth",           require("./routes/auth"));
 // Anotación — requiere sesión de anotador o admin
 app.use("/api/anotacion",      requireAuth, requireRole("anotador", "admin"), require("./routes/anotacion"));
 
+// Solicitudes de registro de anotadores — solo admin
+app.use("/api/admin",          requireAuth, requireRole("admin"), require("./routes/admin"));
+
 // Entrenamiento y Scraper — solo admin
 app.use("/api/entrenamiento",  requireAuth, requireRole("admin"), require("./routes/entrenamiento"));
 app.use("/api/scraper",        requireAuth, requireRole("admin"), require("./routes/scraper"));
