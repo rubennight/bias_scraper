@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 
 export default function Login() {
@@ -79,7 +79,11 @@ export default function Login() {
         </button>
       </form>
 
-      <p style={{ fontSize: 12, color: "var(--ink-3)", textAlign: "center", marginTop: 24 }}>
+      <p style={{ fontSize: 13, color: "var(--ink-2)", textAlign: "center", marginTop: 20 }}>
+        ¿Quieres anotar? <Link to="/registro" style={{ color: "var(--rev)", fontWeight: 600 }}>Crear cuenta</Link>
+      </p>
+
+      <p style={{ fontSize: 12, color: "var(--ink-3)", textAlign: "center", marginTop: 12 }}>
         Dashboard y Eventos son públicos — no necesitas cuenta para consultarlos.
       </p>
     </div>

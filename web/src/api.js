@@ -25,6 +25,13 @@ export const runScraper = () =>
 export const login  = (usuario, password) => api.post("/api/auth/login", { usuario, password });
 export const logout = ()                  => api.post("/api/auth/logout");
 export const getMe  = ()                  => api.get("/api/auth/me");
+export const registrarse = (datos)             => api.post("/api/auth/registro", datos);
+
+// Solicitudes de registro — solo admin
+export const getSolicitudes         = (estado)           => api.get("/api/admin/solicitudes", { params: { estado } });
+export const getContadorSolicitudes = ()                 => api.get("/api/admin/solicitudes/contador");
+export const aprobarSolicitud       = (id, anotadorId)   => api.post(`/api/admin/solicitudes/${id}/aprobar`, anotadorId ? { anotador_id: anotadorId } : {});
+export const rechazarSolicitud      = (id, motivo)       => api.post(`/api/admin/solicitudes/${id}/rechazar`, { motivo });
 
 // Corpus
 export const getStats       = ()       => api.get("/api/stats");
