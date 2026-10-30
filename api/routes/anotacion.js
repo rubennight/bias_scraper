@@ -4,6 +4,7 @@ const router = require("express").Router();
 const pool   = require("../db");
 const { requireRole, requireAnotador } = require("../middleware/auth");
 const { obtenerCola, progresoBloque } = require("../lib/cola");
+const { validarAnotacion } = require("../lib/validar-anotacion");
 
 // ── GET /api/anotacion/anotadores ────────────────────────────
 router.get("/anotadores", async (req, res) => {
@@ -102,6 +103,11 @@ router.post("/anotar", requireAnotador, async (req, res) => {
       return res.status(400).json({ error: "oracion_id y categoria son obligatorios" });
     if (!["A", "B", "C"].includes(categoria))
       return res.status(400).json({ error: "categoria debe ser A, B o C" });
+
+    // Reglas de obligatorio/opcional (ver lib/validar-anotacion.js)
+    const errores = validarAnotacion(categoria, elementos);
+    if (errores.length)
+      return res.status(400).json({ error: errores[0], errores });
 
     await client.query("BEGIN");
 

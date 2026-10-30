@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useAuth } from "../AuthContext";
+import ResumenEvento from "../components/ResumenEvento";
+import { validarAnotacion } from "../anotacion/validar";
 import {
   getAnotadores, crearAnotador,
   getOracionesPendientes, guardarAnotacion,
@@ -147,6 +150,9 @@ function Instrucciones({ onContinuar }) {
 }
 
 // ── Componente: selección de anotador ─────────────────────────
+// Ya no se usa en el flujo: la identidad sale de la sesión. Se conserva
+// (principio aditivo) por si hace falta elegir perfil de nuevo.
+// eslint-disable-next-line no-unused-vars
 function SeleccionAnotador({ onSeleccionar }) {
   const [anotadores, setAnotadores] = useState([]);
   const [nuevo, setNuevo]           = useState(false);
@@ -851,18 +857,21 @@ function FormularioAnotacion({ anotador }) {
   const [confianza, setConfianza]     = useState("alta");
   const [notas, setNotas]             = useState("");
   const [guardando, setGuardando]     = useState(false);
-  const [guardadas, setGuardadas]     = useState(0);
   const [stats, setStats]             = useState(null);
   const [cargando, setCargando]       = useState(true);
   const [pilotoCompletado, setPilotoCompletado] = useState(false);
   const [hoveredBtn, setHoveredBtn]   = useState(null);
 
-  const esPiloto = guardadas < 50;
+  // Avance en el bloque compartido (las 100 primeras oraciones, iguales para
+  // todos): mientras no se complete, es la "prueba piloto".
+  const bloque   = stats?.bloque;
+  const esPiloto = !!bloque && bloque.hechas < bloque.total;
+  const errores  = validarAnotacion(categoria, elementos);
 
   // `cargando` arranca en true y InterfazAnotacion remonta este componente
   // (key) al cambiar de anotador, así que no hace falta activarlo aquí.
   useEffect(() => {
-    getOracionesPendientes({ anotador_id: anotador.id, limite: 50, piloto: true })
+    getOracionesPendientes({ limite: 50 })
       .then(r => { setOraciones(r.data); setCargando(false); })
       .catch(() => setCargando(false));
     getStatsAnotador(anotador.id).then(r => setStats(r.data)).catch(() => {});
@@ -876,36 +885,41 @@ function FormularioAnotacion({ anotador }) {
   };
 
   const handleGuardar = useCallback(async () => {
-    if (!categoria) return;
+    if (validarAnotacion(categoria, elementos).length) return;
     const oracion = oraciones[idx];
     setGuardando(true);
     try {
       await guardarAnotacion({
         oracion_id:  oracion.id,
-        anotador_id: anotador.id,
         categoria,
         elementos:   elementos.filter(e => e.elemento.trim()),
         confianza,
         notas: notas || null,
       });
-      setGuardadas(g => g + 1);
-      if (guardadas + 1 >= 50) setPilotoCompletado(true);
       if (idx + 1 < oraciones.length) {
         setIdx(i => i + 1);
         resetForm();
       } else {
-        const r = await getOracionesPendientes({ anotador_id: anotador.id, limite: 100 });
+        const r = await getOracionesPendientes({ limite: 100 });
         setOraciones(r.data);
         setIdx(0);
         resetForm();
       }
-      getStatsAnotador(anotador.id).then(r => setStats(r.data)).catch(() => {});
+      getStatsAnotador(anotador.id).then(r => {
+        const antes = stats?.bloque;
+        const ahora = r.data.bloque;
+        // Aviso solo en el momento en que se completa el bloque
+        if (antes && ahora && antes.hechas < antes.total && ahora.hechas >= ahora.total) {
+          setPilotoCompletado(true);
+        }
+        setStats(r.data);
+      }).catch(() => {});
     } catch (e) {
       console.error(e);
     } finally {
       setGuardando(false);
     }
-  }, [categoria, oraciones, idx, anotador.id, elementos, confianza, notas, guardadas]);
+  }, [categoria, oraciones, idx, anotador.id, elementos, confianza, notas, stats]);
 
   // Atajo de teclado: A, B, C para categoría — Enter para guardar
   useEffect(() => {
@@ -943,7 +957,7 @@ function FormularioAnotacion({ anotador }) {
           </span>
           {esPiloto && (
             <span style={{ marginLeft: 8, background: "#fef0cc", color: "#c07800", border: "1px solid #f0c870", borderRadius: 8, fontSize: 10, padding: "2px 6px", fontWeight: 700 }}>
-              PRUEBA PILOTO
+              PRUEBA PILOTO · {bloque.hechas}/{bloque.total}
             </span>
           )}
         </div>
@@ -961,10 +975,13 @@ function FormularioAnotacion({ anotador }) {
       {/* Aviso piloto completado */}
       {pilotoCompletado && (
         <div style={{ background: "#dff0df", border: "1px solid #a0d8a0", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#2e7d32" }}>
-          ✓ <strong>Prueba piloto completada</strong> — Ya puedes calcular el Kappa con el segundo anotador desde el Dashboard.
+          ✓ <strong>Prueba piloto completada</strong> — Ya se puede calcular el Kappa con otro anotador que haya terminado el bloque.
           Puedes seguir anotando para enriquecer el corpus.
         </div>
       )}
+
+      {/* Resumen del evento — para no perder el contexto de la nota */}
+      <ResumenEvento titular={oracion.titular_evento} resumen={oracion.resumen} />
 
       {/* Contexto previo */}
       {oracion.contexto_prev && (
@@ -1019,12 +1036,12 @@ function FormularioAnotacion({ anotador }) {
 
         <button
           onClick={handleGuardar}
-          disabled={!categoria || guardando}
+          disabled={errores.length > 0 || guardando}
           style={{
-            background: categoria ? "#C0392B" : "#ccc",
+            background: errores.length === 0 ? "#C0392B" : "#ccc",
             color: "#fff", border: "none", borderRadius: 8,
             padding: "10px 28px", fontSize: 14, fontWeight: 700,
-            cursor: categoria ? "pointer" : "default", fontFamily: "inherit",
+            cursor: errores.length === 0 ? "pointer" : "default", fontFamily: "inherit",
           }}
         >
           {guardando ? "..." : "Guardar →"}
@@ -1037,7 +1054,7 @@ function FormularioAnotacion({ anotador }) {
               setIdx(i => i + 1);
               resetForm();
             } else {
-              const r = await getOracionesPendientes({ anotador_id: anotador.id, limite: 100 });
+              const r = await getOracionesPendientes({ limite: 100 });
               setOraciones(r.data);
               setIdx(0);
               resetForm();
@@ -1129,6 +1146,13 @@ function FormularioAnotacion({ anotador }) {
         })()}
       </div>
 
+      {/* Qué falta para poder guardar */}
+      {categoria && errores.length > 0 && (
+        <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12, color: "#C0392B", lineHeight: 1.6 }}>
+          {errores.map(m => <li key={m}>{m}</li>)}
+        </ul>
+      )}
+
       {/* Atajos */}
       <div style={{ marginTop: 12, fontSize: 11, color: "#bbb", textAlign: "center" }}>
         Atajos: <kbd style={{ background: "#f0ede8", padding: "1px 5px", borderRadius: 8 }}>A</kbd>
@@ -1189,13 +1213,13 @@ function FilaAnotacion({ row, indice = 0, anotador, onGuardado, onEliminado }) {
   };
 
   const guardar = async () => {
-    if (!categoria) return;
+    const faltan = validarAnotacion(categoria, elementos);
+    if (faltan.length) { setError(faltan.join(". ")); return; }
     setGuardando(true);
     setError("");
     try {
       await guardarAnotacion({
         oracion_id:  row.oracion_id,
-        anotador_id: anotador.id,
         categoria,
         elementos:   elementos.filter(e => e.elemento.trim()),
         confianza,
@@ -1455,32 +1479,28 @@ function BancoAnotaciones({ anotador }) {
 
 // ── Página principal ──────────────────────────────────────────
 export default function Anotacion() {
-  const [paso, setPaso]           = useState("instrucciones"); // instrucciones → anotador → anotar
-  const [anotador, setAnotador]   = useState(null);
+  const { usuario } = useAuth();
+  const [paso, setPaso]           = useState("instrucciones"); // instrucciones → anotar
   const [vista, setVista]         = useState("anotar"); // anotar → banco
 
-  const handleAnotador = (a) => {
-    setAnotador(a);
-    setPaso("anotar");
-  };
+  // La identidad sale de la sesión (perfil de anotador enlazado a la cuenta)
+  const anotador = usuario?.anotador || null;
 
   return (
     <div>
       <div className="page-header">
         <div className="page-title">Anotación A/B/C</div>
-        <div className="page-sub">Fase 4 del pipeline KDD · Prueba piloto: 50 oraciones</div>
+        <div className="page-sub">Fase 4 del pipeline KDD · Prueba piloto: 100 oraciones</div>
       </div>
 
       {/* Steps indicator */}
       <div style={{ display: "flex", gap: 0, marginBottom: "2rem", maxWidth: 500 }}>
         {[
           { id: "instrucciones", label: "1. Instrucciones" },
-          { id: "anotador",      label: "2. Identificación" },
-          { id: "anotar",        label: "3. Anotar" },
+          { id: "anotar",        label: "2. Anotar" },
         ].map((s, i) => {
           const active  = paso === s.id;
-          const done    = (i === 0 && paso !== "instrucciones") ||
-                          (i === 1 && paso === "anotar");
+          const done    = i === 0 && paso === "anotar";
           return (
             <div key={s.id} style={{ display: "flex", alignItems: "center", flex: 1 }}>
               <div style={{
@@ -1497,10 +1517,13 @@ export default function Anotacion() {
       </div>
 
       {paso === "instrucciones" && (
-        <Instrucciones onContinuar={() => setPaso("anotador")} />
+        <Instrucciones onContinuar={() => setPaso("anotar")} />
       )}
-      {paso === "anotador" && (
-        <SeleccionAnotador onSeleccionar={handleAnotador} />
+      {paso === "anotar" && !anotador && (
+        <div className="empty-state">
+          <div className="empty-state-icon">·</div>
+          <div className="empty-state-text">Tu cuenta no tiene un perfil de anotador enlazado.</div>
+        </div>
       )}
       {paso === "anotar" && anotador && (
         <>
