@@ -54,15 +54,21 @@ CREATE TABLE IF NOT EXISTS bloque_compartido (
     orden      INTEGER NOT NULL
 );
 
--- Solo se llena una vez: si ya tiene filas, no hace nada.
+-- Solo se llena una vez: si ya tiene filas, no hace nada. Se eligen solo
+-- oraciones con artículo, fuente y evento (las mismas uniones de la cola
+-- de anotación): una oración de un artículo sin evento nunca se mostraría
+-- y el bloque no se podría completar.
 INSERT INTO bloque_compartido (oracion_id, orden)
 SELECT id, row_number() OVER (ORDER BY MD5('bloque' || id::text), id)
 FROM (
-    SELECT id
-    FROM oraciones
-    WHERE (compleja   IS NULL OR compleja   = FALSE)
-      AND (descartada IS NULL OR descartada = FALSE)
-    ORDER BY MD5('bloque' || id::text), id
+    SELECT o.id
+    FROM oraciones o
+    JOIN articulos a  ON a.id  = o.articulo_id
+    JOIN fuentes   f  ON f.id  = a.fuente_id
+    JOIN eventos   ev ON ev.id = a.evento_id
+    WHERE (o.compleja   IS NULL OR o.compleja   = FALSE)
+      AND (o.descartada IS NULL OR o.descartada = FALSE)
+    ORDER BY MD5('bloque' || o.id::text), o.id
     LIMIT 100
 ) elegidas
 WHERE NOT EXISTS (SELECT 1 FROM bloque_compartido);

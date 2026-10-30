@@ -3,6 +3,7 @@
 const router = require("express").Router();
 const pool   = require("../db");
 const { requireRole, requireAnotador } = require("../middleware/auth");
+const { obtenerCola, progresoBloque } = require("../lib/cola");
 
 // ── GET /api/anotacion/anotadores ────────────────────────────
 router.get("/anotadores", async (req, res) => {
@@ -38,43 +39,13 @@ router.post("/anotadores", requireRole("admin"), async (req, res) => {
 });
 
 // ── GET /api/anotacion/oraciones ─────────────────────────────
-// Retorna oraciones pendientes para un anotador.
-// Orden: aleatorio entre artículos (usando MD5 estable),
-//        secuencial dentro de cada artículo (por posición).
+// Retorna la cola de oraciones del anotador de la sesión: primero el
+// bloque compartido (iguales para todos, sirve para el Kappa) y después
+// oraciones al azar con orden propio — ver lib/cola.js.
 router.get("/oraciones", requireAnotador, async (req, res) => {
   try {
-    const { limite = 50 } = req.query;
-    const anotador_id = req.anotadorId;
-
-    const result = await pool.query(`
-      SELECT
-        o.id,
-        o.texto,
-        o.contexto_prev,
-        o.contexto_sig,
-        o.posicion,
-        o.num_palabras,
-        a.id          AS articulo_id,
-        a.titular     AS titular_articulo,
-        f.nombre      AS fuente,
-        f.orientacion,
-        ev.id         AS evento_id,
-        ev.titular_evento
-      FROM oraciones o
-      JOIN articulos a  ON a.id  = o.articulo_id
-      JOIN fuentes   f  ON f.id  = a.fuente_id
-      JOIN eventos   ev ON ev.id = a.evento_id
-      WHERE o.id NOT IN (
-        SELECT oracion_id FROM anotaciones
-        WHERE anotador_id = $1 AND version = 1
-      )
-      AND (o.compleja IS NULL OR o.compleja = FALSE)
-      AND (o.descartada IS NULL OR o.descartada = FALSE)
-      ORDER BY MD5(a.id::text), o.posicion
-      LIMIT $2
-    `, [anotador_id, parseInt(limite)]);
-
-    res.json(result.rows);
+    const limite = Math.min(Math.max(parseInt(req.query.limite) || 50, 1), 500);
+    res.json(await obtenerCola(pool, req.anotadorId, limite));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -86,7 +57,7 @@ router.get("/stats/:anotador_id", requireAnotador, async (req, res) => {
     // El :anotador_id de la ruta se conserva por compatibilidad, pero se
     // ignora: las estadísticas son siempre las del usuario de la sesión.
     const anotador_id = req.anotadorId;
-    const [totales, porCategoria, totalOraciones] = await Promise.all([
+    const [totales, porCategoria, totalOraciones, bloque] = await Promise.all([
       pool.query(`
         SELECT COUNT(*) AS anotadas FROM anotaciones
         WHERE anotador_id = $1 AND version = 1
@@ -101,11 +72,13 @@ router.get("/stats/:anotador_id", requireAnotador, async (req, res) => {
         WHERE (compleja IS NULL OR compleja = FALSE)
           AND (descartada IS NULL OR descartada = FALSE)
       `),
+      progresoBloque(pool, anotador_id),
     ]);
     res.json({
       anotadas:     parseInt(totales.rows[0].anotadas),
       total:        parseInt(totalOraciones.rows[0].total),
       porCategoria: Object.fromEntries(porCategoria.rows.map(r => [r.categoria, parseInt(r.total)])),
+      bloque,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
