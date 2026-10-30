@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../AuthContext";
 import ResumenEvento from "../components/ResumenEvento";
 import { validarAnotacion } from "../anotacion/validar";
+import { EJEMPLOS_MIXTOS } from "../anotacion/ejemplosMixtos";
+import { GUIA_CAMPOS, PASOS, CASOS_LIMITE, REGLA_DOMINANTE } from "../anotacion/guiaCampos";
 import {
   getAnotadores, crearAnotador,
   getOracionesPendientes, guardarAnotacion,
@@ -122,6 +124,22 @@ function Instrucciones({ onContinuar }) {
         ))}
       </div>
 
+      <div style={{ border: "1px solid #d8d1bf", borderRadius: 8, padding: "1rem 1.25rem", marginBottom: 12, background: "#fff" }}>
+        <strong style={{ fontSize: 13 }}>Qué es obligatorio y qué opcional</strong>
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          {GUIA_CAMPOS.map(c => (
+            <div key={c.campo} style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 13 }}>
+              <span style={{ flex: "0 0 92px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: COLOR_ESTADO[c.estado] }}>{c.estado}</span>
+              <span style={{ color: "#444", lineHeight: 1.5 }}><strong>{c.campo}.</strong> {c.detalle}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{ marginTop: 12, fontSize: 13, color: "#555", lineHeight: 1.6 }}>{REGLA_DOMINANTE}</p>
+        <p style={{ marginTop: 6, fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+          Durante la anotación, el panel «Ejemplos» tiene ejemplos por subtipo, oraciones mixtas y esta guía completa con los casos límite.
+        </p>
+      </div>
+
       <div style={{
         background: "#f4efe5", border: "1px solid #d8d1bf",
         borderRadius: 8, padding: "1rem 1.25rem", marginBottom: 24,
@@ -129,7 +147,7 @@ function Instrucciones({ onContinuar }) {
         <strong style={{ fontSize: 13 }}>💡 Consejos prácticos</strong>
         <ul style={{ marginTop: 8, paddingLeft: 18, fontSize: 13, color: "#555", lineHeight: 1.7 }}>
           <li>Lee el contexto previo y siguiente antes de clasificar.</li>
-          <li>Si una oración mezcla A y B, clasifícala por el elemento dominante.</li>
+          <li>Si una oración mezcla A, B y C, clasifícala por la categoría que más orienta la lectura de la oración completa, no por el número de elementos.</li>
           <li>Si dudas entre B y C, pregúntate: ¿existe un sinónimo más neutral? Si sí → C.</li>
           <li>Cuando marques B o C, indica qué palabra tiene el sesgo y cuál sería la alternativa neutral.</li>
           <li>Puedes bajar la confianza a "media" o "baja" si no estás seguro.</li>
@@ -694,6 +712,93 @@ function resaltar(texto, marcas, color) {
   );
 }
 
+// Resalta cada fragmento con el color del tipo de su elemento (A/B/C)
+function resaltarElementos(texto, elementos) {
+  const patron = elementos
+    .map(el => el.t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  return texto.split(new RegExp(`(${patron})`)).map((trozo, i) => {
+    const el = elementos.find(e => e.t === trozo);
+    return el
+      ? <mark key={i} style={{ background: `${CAT_COLOR[el.tipo]}22`, color: CAT_COLOR[el.tipo], fontWeight: 700, borderRadius: 4, padding: "0 2px" }}>{trozo}</mark>
+      : trozo;
+  });
+}
+
+// Pestaña "Mixtas": oraciones con elementos de varios tipos y su dominante
+function EjemplosMixtos() {
+  return (
+    <>
+      <div style={{ background: "#f4efe5", border: "1px solid #d8d1bf", borderRadius: 8, padding: "8px 10px", fontSize: 11, lineHeight: 1.5, marginBottom: 10, color: "#555" }}>
+        <strong style={{ color: "#1a1a1a" }}>Anotaciones mixtas.</strong> {REGLA_DOMINANTE}
+      </div>
+      {EJEMPLOS_MIXTOS.map((ej, i) => {
+        const tipos = [...new Set(ej.elementos.map(e => e.tipo))].sort();
+        return (
+          <div key={i} className="ej-card" style={{ "--i": i, border: `1px solid ${CAT_COLOR[ej.dominante]}40`, background: CAT_BG[ej.dominante], borderRadius: 8, padding: "9px 10px", marginBottom: 8 }}>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: "#999", marginBottom: 4 }}>
+              Elementos: {tipos.join(" · ")}
+            </div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "#1a1a1a", marginBottom: 6 }}>
+              {resaltarElementos(ej.texto, ej.elementos)}
+            </div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+              {ej.elementos.map((el, j) => (
+                <span key={j} style={{ fontSize: 10.5, background: CAT_BG[el.tipo], color: CAT_COLOR[el.tipo], border: `1px solid ${CAT_COLOR[el.tipo]}40`, borderRadius: 6, padding: "1px 6px" }}>
+                  {el.tipo}·{el.subtipo}{el.alt ? ` → ${el.alt}` : ""}
+                </span>
+              ))}
+            </div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: CAT_COLOR[ej.dominante], marginBottom: 3 }}>
+              Dominante: {ej.dominante}
+            </div>
+            <div style={{ fontSize: 11, color: "#777", fontStyle: "italic", lineHeight: 1.45 }}>{ej.porque}</div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+const COLOR_ESTADO = { Obligatorio: "#C0392B", Recomendado: "#c07800", Opcional: "#2e7d32" };
+
+const TITULO_SECCION = { fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "#999", fontWeight: 700, margin: "4px 0 6px" };
+
+// Pestaña "Guía": pasos, qué es obligatorio y opcional, y casos límite
+function GuiaAnotacion() {
+  return (
+    <>
+      <div style={TITULO_SECCION}>Cómo anotar</div>
+      <ol style={{ margin: "0 0 14px", paddingLeft: 18, fontSize: 11.5, lineHeight: 1.55, color: "#444" }}>
+        {PASOS.map((paso, i) => <li key={i} style={{ marginBottom: 3 }}>{paso}</li>)}
+      </ol>
+
+      <div style={TITULO_SECCION}>Obligatorio y opcional</div>
+      {GUIA_CAMPOS.map(c => (
+        <div key={c.campo} style={{ borderLeft: `3px solid ${COLOR_ESTADO[c.estado]}`, padding: "4px 8px", marginBottom: 6, background: "#fafafa", borderRadius: "0 6px 6px 0" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#1a1a1a" }}>
+            {c.campo}{" "}
+            <span style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".05em", color: COLOR_ESTADO[c.estado] }}>· {c.estado}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#666", lineHeight: 1.45 }}>{c.detalle}</div>
+        </div>
+      ))}
+
+      <div style={{ ...TITULO_SECCION, marginTop: 14 }}>La dominante</div>
+      <div style={{ fontSize: 11.5, color: "#444", lineHeight: 1.5, marginBottom: 14 }}>{REGLA_DOMINANTE}</div>
+
+      <div style={TITULO_SECCION}>Casos límite</div>
+      {CASOS_LIMITE.map(c => (
+        <div key={c.titulo} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#1a1a1a" }}>{c.titulo}</div>
+          <div style={{ fontSize: 11, color: "#666", lineHeight: 1.5 }}>{c.texto}</div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 // ── Componente: panel lateral de ejemplos (solo consulta) ──────
 // Se puede plegar y ensanchar arrastrando su borde. No toca el estado
 // del formulario de anotación.
@@ -705,9 +810,10 @@ function PanelEjemplos() {
   const panelRef    = useRef(null);
   const arrastrando = useRef(false);
 
+  // tipo: "A" | "B" | "C" (ejemplos por subtipo), "M" (mixtas) o "G" (guía)
   const elegirTipo = (t) => {
     setTipo(t);
-    setSubtipo((t === "A" ? SUBTIPOS_A : SUBTIPOS_BC)[0].value);
+    setSubtipo(t === "M" || t === "G" ? null : (t === "A" ? SUBTIPOS_A : SUBTIPOS_BC)[0].value);
   };
 
   const iniciarArrastre = (e) => {
@@ -735,9 +841,10 @@ function PanelEjemplos() {
     );
   }
 
+  const esCategoria = tipo === "A" || tipo === "B" || tipo === "C";
   const subtipos = tipo === "A" ? SUBTIPOS_A : SUBTIPOS_BC;
-  const lista    = tipo && subtipo ? EJEMPLOS[tipo][subtipo] || [] : [];
-  const inst     = tipo ? INSTRUCCIONES.find(i => i.cat === tipo) : null;
+  const lista    = esCategoria && subtipo ? EJEMPLOS[tipo][subtipo] || [] : [];
+  const inst     = esCategoria ? INSTRUCCIONES.find(i => i.cat === tipo) : null;
 
   return (
     <div ref={panelRef} className="ej-panel" style={{
@@ -782,13 +889,29 @@ function PanelEjemplos() {
           ))}
         </div>
 
+        {/* Mixtas y Guía */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {[{ id: "M", label: "Mixtas" }, { id: "G", label: "Guía" }].map(b => (
+            <button key={b.id} onMouseDown={sinFoco} onClick={() => elegirTipo(b.id)} style={{
+              flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 600,
+              fontFamily: "inherit", cursor: "pointer",
+              background: tipo === b.id ? "#1a1a1a" : "#fff",
+              color: tipo === b.id ? "#fff" : "#444",
+              border: "1.5px solid #1a1a1a",
+            }}>{b.label}</button>
+          ))}
+        </div>
+
         {!tipo && (
           <div style={{ fontSize: 12, color: "#999", lineHeight: 1.5 }}>
-            Elige A, B o C para ver ejemplos por subtipo.
+            Elige A, B o C para ver ejemplos por subtipo, Mixtas para oraciones con varios tipos, o Guía para saber qué es obligatorio.
           </div>
         )}
 
-        {tipo && (
+        {tipo === "M" && <EjemplosMixtos />}
+        {tipo === "G" && <GuiaAnotacion />}
+
+        {esCategoria && (
           <>
             <div style={{ background: inst.bg, border: `1px solid ${inst.color}40`, borderRadius: 8, padding: "7px 9px", fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
               <strong style={{ color: inst.color }}>{inst.titulo}</strong>
