@@ -6,6 +6,7 @@
 // la lista permitida — úsalo DESPUÉS de requireAuth.
 
 const jwt = require("jsonwebtoken");
+const pool = require("../db");
 
 const COOKIE_NAME = "token";
 
@@ -40,4 +41,29 @@ function requireRole(...rolesPermitidos) {
   };
 }
 
-module.exports = { requireAuth, requireRole, COOKIE_NAME };
+// requireAnotador: úsalo DESPUÉS de requireAuth en las rutas que actúan
+// "como anotador" (pedir oraciones, anotar, borrar una anotación propia).
+// La identidad sale de la BD, nunca del cliente: se ignora cualquier
+// anotador_id en query, params o body, así nadie anota a nombre de otro.
+// Deja el perfil de la sesión en req.anotadorId.
+async function requireAnotador(req, res, next) {
+  try {
+    const r = await pool.query(
+      "SELECT anotador_id, estado FROM usuarios WHERE id = $1",
+      [req.usuario.id]
+    );
+    const fila = r.rows[0];
+    if (!fila || fila.estado !== "aprobado") {
+      return res.status(403).json({ error: "Tu cuenta no está aprobada" });
+    }
+    if (!fila.anotador_id) {
+      return res.status(403).json({ error: "Tu cuenta no tiene perfil de anotador" });
+    }
+    req.anotadorId = fila.anotador_id;
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { requireAuth, requireRole, requireAnotador, COOKIE_NAME };

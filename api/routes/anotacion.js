@@ -2,6 +2,7 @@
 
 const router = require("express").Router();
 const pool   = require("../db");
+const { requireRole, requireAnotador } = require("../middleware/auth");
 
 // ── GET /api/anotacion/anotadores ────────────────────────────
 router.get("/anotadores", async (req, res) => {
@@ -20,7 +21,7 @@ router.get("/anotadores", async (req, res) => {
 });
 
 // ── POST /api/anotacion/anotadores ───────────────────────────
-router.post("/anotadores", async (req, res) => {
+router.post("/anotadores", requireRole("admin"), async (req, res) => {
   try {
     const { nombre, descripcion } = req.body;
     if (!nombre?.trim())
@@ -40,11 +41,10 @@ router.post("/anotadores", async (req, res) => {
 // Retorna oraciones pendientes para un anotador.
 // Orden: aleatorio entre artículos (usando MD5 estable),
 //        secuencial dentro de cada artículo (por posición).
-router.get("/oraciones", async (req, res) => {
+router.get("/oraciones", requireAnotador, async (req, res) => {
   try {
-    const { anotador_id, limite = 50 } = req.query;
-    if (!anotador_id)
-      return res.status(400).json({ error: "anotador_id requerido" });
+    const { limite = 50 } = req.query;
+    const anotador_id = req.anotadorId;
 
     const result = await pool.query(`
       SELECT
@@ -81,9 +81,11 @@ router.get("/oraciones", async (req, res) => {
 });
 
 // ── GET /api/anotacion/stats/:anotador_id ────────────────────
-router.get("/stats/:anotador_id", async (req, res) => {
+router.get("/stats/:anotador_id", requireAnotador, async (req, res) => {
   try {
-    const { anotador_id } = req.params;
+    // El :anotador_id de la ruta se conserva por compatibilidad, pero se
+    // ignora: las estadísticas son siempre las del usuario de la sesión.
+    const anotador_id = req.anotadorId;
     const [totales, porCategoria, totalOraciones] = await Promise.all([
       pool.query(`
         SELECT COUNT(*) AS anotadas FROM anotaciones
@@ -111,19 +113,20 @@ router.get("/stats/:anotador_id", async (req, res) => {
 });
 
 // ── POST /api/anotacion/anotar ───────────────────────────────
-router.post("/anotar", async (req, res) => {
+router.post("/anotar", requireAnotador, async (req, res) => {
   const client = await pool.connect();
   try {
+    const anotador_id = req.anotadorId;
     const {
-      oracion_id, anotador_id, categoria,
+      oracion_id, categoria,
       elemento_sesgo, alternativa,
       elementos = [],
       confianza = "alta",
       notas, version = 1,
     } = req.body;
 
-    if (!oracion_id || !anotador_id || !categoria)
-      return res.status(400).json({ error: "oracion_id, anotador_id y categoria son obligatorios" });
+    if (!oracion_id || !categoria)
+      return res.status(400).json({ error: "oracion_id y categoria son obligatorios" });
     if (!["A", "B", "C"].includes(categoria))
       return res.status(400).json({ error: "categoria debe ser A, B o C" });
 
@@ -352,11 +355,9 @@ router.get("/banco", async (req, res) => {
 // Borra una anotación (y sus elementos, por ON DELETE CASCADE).
 // Requiere ?anotador_id= que coincida con el dueño de la anotación —
 // mismo modelo de confianza que el resto de la app (sin login real).
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAnotador, async (req, res) => {
   try {
-    const { anotador_id } = req.query;
-    if (!anotador_id)
-      return res.status(400).json({ error: "anotador_id requerido" });
+    const anotador_id = req.anotadorId;
 
     const result = await pool.query(`
       DELETE FROM anotaciones WHERE id = $1 AND anotador_id = $2 RETURNING id
