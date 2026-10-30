@@ -23,6 +23,8 @@ const rateLimit = require("express-rate-limit");
 const pool = require("../db");
 const { COOKIE_NAME } = require("../middleware/auth");
 const { validarRegistro } = require("../lib/registro");
+const { crearSolicitud } = require("../lib/solicitudes");
+const { decidirLogin } = require("../lib/login");
 
 const JWT_EXPIRES_IN = "10h";
 const COOKIE_MAX_AGE_MS = 10 * 60 * 60 * 1000;
@@ -38,6 +40,10 @@ const loginLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  // Solo cuentan los intentos fallidos: si varios anotadores comparten IP
+  // (red de la facultad, proxy), sus inicios de sesión correctos no deben
+  // agotar el cupo de los demás.
+  skipSuccessfulRequests: true,
   // Nota: si el servicio queda detrás de un proxy que no preserva la
   // IP real del cliente (revisar cómo Cloudflare Tunnel llega al
   // contenedor), puede hacer falta `app.set('trust proxy', ...)` en
@@ -53,6 +59,9 @@ const registroLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  // Un error de validación no gasta el cupo: detrás de un proxy todos
+  // comparten IP y un error de dedo bloquearía el registro a todo el equipo.
+  skipFailedRequests: true,
   message: { error: "Demasiados registros desde esta conexión. Intenta más tarde." },
 });
 
@@ -110,19 +119,11 @@ router.post("/login", loginLimiter, async (req, res) => {
     // ver DUMMY_HASH arriba.
     const claveValida = await bcrypt.compare(password, fila?.password_hash || DUMMY_HASH);
 
-    if (!fila || !claveValida) {
-      // Mensaje genérico a propósito: no revela si el usuario existe.
-      return res.status(401).json({ error: "Usuario o contraseña incorrectos" });
-    }
-
-    // El estado se revisa DESPUÉS de validar la contraseña: con una
-    // contraseña incorrecta la respuesta es siempre el 401 genérico, así
-    // no se puede averiguar si una cuenta está pendiente o rechazada.
-    if (fila.estado === "pendiente") {
-      return res.status(403).json({ error: "Tu cuenta está pendiente de aprobación" });
-    }
-    if (fila.estado === "rechazado") {
-      return res.status(403).json({ error: "Tu solicitud fue rechazada" });
+    // Mensajes genéricos a propósito y estado de la cuenta solo con la
+    // contraseña correcta: ver lib/login.js.
+    const decision = decidirLogin(fila, claveValida);
+    if (decision.status !== 200) {
+      return res.status(decision.status).json({ error: decision.error });
     }
 
     const token = jwt.sign(
@@ -184,13 +185,9 @@ router.post("/registro", registroLimiter, async (req, res) => {
     // El hash se calcula siempre, para que el tiempo no delate duplicados.
     const hash = await bcrypt.hash(String(req.body.password), 12);
 
-    // ON CONFLICT sin objetivo cubre tanto el usuario como el email únicos.
-    await pool.query(
-      `INSERT INTO usuarios (usuario, password_hash, rol, nombre_completo, email, celular, estado)
-       VALUES ($1, $2, 'anotador', $3, $1, $4, 'pendiente')
-       ON CONFLICT DO NOTHING`,
-      [email, hash, nombre_completo, celular]
-    );
+    // Una solicitud rechazada se puede volver a registrar; las demás no se
+    // sobrescriben (ver lib/solicitudes.js).
+    await crearSolicitud(pool, { nombre_completo, email, celular, hash });
 
     res.json({ ok: true, mensaje: "Solicitud enviada. Podrás entrar cuando sea aprobada." });
   } catch (err) {

@@ -45,13 +45,26 @@ El Kappa solo necesita que al menos dos personas anoten las mismas oraciones; no
 - **Sin recuperación de contraseña, sin verificación de email ni aviso al admin por correo.** Un admin puede restablecer una contraseña con `api/scripts/crear-admin.js`.
 - **La dominante se elige viendo la oración completa, no contando elementos** (decisión del autor, ya presente en la taxonomía).
 
-### 5. Verificación
+### 5. Revisión independiente y correcciones
 
-Pruebas automatizadas: 27 en la API (validación de registro, de anotaciones y de la cola contra la BD local, con transacciones revertidas) y 23 en el frontend (validadores y datos de la guía). Con `curl` contra la API local: registro, cuenta pendiente, aprobación, rechazo, 403 a un anotador en rutas de admin, anotador de la sesión por encima del enviado por el cliente, borrado de anotaciones ajenas, aislamiento del Banco y validación de `/anotar`. Lint limpio en los archivos de la rama. **Pendiente de revisión visual por el autor:** las pantallas no se vieron en un navegador durante la implementación.
+Una revisión de toda la rama por un revisor independiente no encontró problemas críticos y señaló seis importantes, que se corrigieron en una sola pasada con prueba primero:
 
-### 6. Pendientes
+- **Fuga por `/lexicon` y `/kappa`:** devolvían a cualquier anotador los elementos de todos y permitían averiguar cómo había clasificado otro el bloque compartido. Ahora son solo para admin (los consume Clasificador, que ya lo era).
+- **Marcas `compleja` y `descartada`:** cualquier anotador podía quitarlas de cualquier oración, es decir, alterar el bloque compartido para todos. Ahora un anotador solo puede marcar; quitar la marca es del admin.
+- **Límites de intentos:** los errores de validación del registro y los inicios de sesión correctos ya no gastan el cupo por IP (detrás de un proxy todos comparten IP y un error de dedo bloqueaba a todo el equipo). El límite de intentos fallidos de login se mantiene (se comprobó: 5 fallos y el sexto da 429).
+- **Correo bloqueado tras un rechazo:** una solicitud rechazada ahora se puede volver a registrar (queda pendiente con los datos nuevos), así el dueño real de un correo que alguien más usó no queda bloqueado. Las pendientes y las aprobadas nunca se sobrescriben.
+- **Orden de despliegue:** la migración debe aplicarse **antes** de desplegar la API nueva (ver el encabezado de `sql/registro_anotadores.sql`).
+- **Pruebas de seguridad que solo se habían comprobado a mano:** decisión del login según estado y contraseña (`lib/login.js`), 403 sin perfil de anotador, correo duplicado, aislamiento del Banco (`lib/banco.js`), permisos de las rutas y límite del registro.
 
-- Aplicar `sql/registro_anotadores.sql` a mano en producción (no se ejecuta automático desde ningún lado).
+### 6. Verificación
+
+Pruebas automatizadas: 50 en la API (validación de registro, de anotaciones, de la cola, de solicitudes, del aislamiento del Banco, del login, de permisos y del límite de registro, las de BD con transacciones revertidas) y 23 en el frontend (validadores y datos de la guía). Con `curl` contra la API local: registro, cuenta pendiente, aprobación, rechazo, 403 a un anotador en rutas de admin, anotador de la sesión por encima del enviado por el cliente, borrado de anotaciones ajenas, aislamiento del Banco y validación de `/anotar`. Lint limpio en los archivos de la rama. **Pendiente de revisión visual por el autor:** las pantallas no se vieron en un navegador durante la implementación.
+
+### 7. Pendientes
+
+- Aplicar `sql/registro_anotadores.sql` a mano en producción **antes** de desplegar la API (no se ejecuta automático desde ningún lado).
+- **Verificar `trust proxy` y la IP real del cliente detrás de Cloudflare Tunnel antes de invitar anotadores.** Los límites de intentos (login y registro) se calculan por IP; si el proxy no preserva la IP real, todos comparten un solo cupo. No se tocó en esta rama porque no se puede comprobar fuera de producción.
+- Menores diferidos de la revisión: `progresoBloque` cuenta `hechas` sin el filtro de elegibles; la FK de `bloque_compartido` no tiene `ON DELETE CASCADE`; el `UPDATE` que enlaza a `ru` no verifica el nombre del perfil; `usuarios.anotador_id` sin índice único (dos aprobaciones simultáneas podrían ligar dos cuentas al mismo perfil); el validador de anotaciones del frontend y el del backend son copias que podrían divergir y el servidor guarda `tipo` por omisión como la categoría; falta validar entradas mal formadas en `/anotar`, `/registro` y `/aprobar` (responden 500 en vez de 400) y poner tope de longitud a nombre y contraseña; `pool.connect()` de `admin.js` fuera del `try`; `crear-admin.js` aprobaría a un solicitante pendiente si se usa para restablecer su contraseña; las rutas de aprobar y rechazar aceptan POST vacío y dependen de `SameSite=Lax`; `cola.test.js` depende de datos de la BD local.
 - Revisar visualmente `/registro`, `/solicitudes`, el panel de ejemplos (Mixtas y Guía) y el resumen del evento.
 - Cuando dos anotadores terminen el bloque, calcular el Kappa con `GET /api/anotacion/kappa`.
 - Deuda de lint previa en archivos que esta entrada no toca (`Scraper.jsx`, la búsqueda de `Eventos`, entre otros).

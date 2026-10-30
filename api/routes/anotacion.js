@@ -5,6 +5,7 @@ const pool   = require("../db");
 const { requireRole, requireAnotador } = require("../middleware/auth");
 const { obtenerCola, progresoBloque } = require("../lib/cola");
 const { validarAnotacion } = require("../lib/validar-anotacion");
+const { condicionAislamiento } = require("../lib/banco");
 
 // ── GET /api/anotacion/anotadores ────────────────────────────
 router.get("/anotadores", async (req, res) => {
@@ -155,7 +156,9 @@ router.post("/anotar", requireAnotador, async (req, res) => {
 // Lexicón separado en dos tablas:
 // - sesgo (tipo B y C): pares elemento/alternativa del lexicón valente MX
 // - facticidad (tipo A): inventario de elementos factuales por subtipo
-router.get("/lexicon", async (req, res) => {
+// Solo admin: devuelve los elementos de TODOS los anotadores, incluidos los del
+// bloque compartido, y los consume Clasificador (que es solo admin).
+router.get("/lexicon", requireRole("admin"), async (req, res) => {
   try {
     const { tipo } = req.query;
 
@@ -194,7 +197,9 @@ router.get("/lexicon", async (req, res) => {
 });
 
 // ── GET /api/anotacion/kappa ─────────────────────────────────
-router.get("/kappa", async (req, res) => {
+// Solo admin: calculado entre dos anotadores cualquiera revela cómo clasificó
+// uno de ellos las oraciones compartidas.
+router.get("/kappa", requireRole("admin"), async (req, res) => {
   try {
     const { anotador1_id, anotador2_id, version = 1 } = req.query;
     const result = await pool.query(`
@@ -275,11 +280,8 @@ router.get("/banco", bancoAuth, async (req, res) => {
     if (categoria)   { params.push(categoria);    where.push(`an.categoria = $${params.length}`); }
     if (confianza)   { params.push(confianza);    where.push(`an.confianza = $${params.length}`); }
     if (q?.trim())   { params.push(`%${q.trim()}%`); where.push(`o.texto ILIKE $${params.length}`); }
-    if (req.usuario.rol !== "admin") {
-      params.push(req.anotadorId);
-      where.push(`(an.anotador_id = $${params.length}
-                   OR an.oracion_id NOT IN (SELECT oracion_id FROM bloque_compartido))`);
-    }
+    const aislamiento = condicionAislamiento(req.usuario.rol, req.anotadorId, params);
+    if (aislamiento) where.push(aislamiento);
 
     const whereSql = `WHERE ${where.join(" AND ")}`;
     const limiteN  = Math.min(100, Math.max(1, parseInt(limite) || 30));
@@ -367,6 +369,10 @@ router.delete("/:id", requireAnotador, async (req, res) => {
 router.put("/oraciones/:id/compleja", async (req, res) => {
   try {
     const { compleja = true } = req.body;
+    // Quitar la marca la reserva el admin: una oración marcada sale de la cola
+    // de todos (y del bloque compartido), y un anotador no debe deshacerlo.
+    if (compleja === false && req.usuario.rol !== "admin")
+      return res.status(403).json({ error: "Solo un administrador puede quitar esta marca" });
     const result = await pool.query(`
       UPDATE oraciones SET compleja = $1 WHERE id = $2 RETURNING id, compleja
     `, [compleja, req.params.id]);
@@ -382,6 +388,8 @@ router.put("/oraciones/:id/compleja", async (req, res) => {
 router.put("/oraciones/:id/descartada", async (req, res) => {
   try {
     const { descartada = true } = req.body;
+    if (descartada === false && req.usuario.rol !== "admin")
+      return res.status(403).json({ error: "Solo un administrador puede quitar esta marca" });
     const result = await pool.query(`
       UPDATE oraciones SET descartada = $1 WHERE id = $2 RETURNING id, descartada
     `, [descartada, req.params.id]);

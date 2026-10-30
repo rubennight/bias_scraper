@@ -11,6 +11,10 @@
 -- (enlazar `ru` con su perfil y borrar el perfil de anotador de María
 -- Cristina Justo Hernández) y ambas están protegidas.
 --
+-- ORDEN DE DESPLIEGUE: aplicar este archivo ANTES de desplegar la API
+-- nueva. El login lee `usuarios.estado`; si la API nueva arranca sin esta
+-- migración, todos los inicios de sesión (incluido el del admin) fallan.
+--
 -- Aplicar manualmente en producción (Adminer, psql, etc.) — este
 -- archivo no se ejecuta automático desde ningún lado.
 -- =============================================================
