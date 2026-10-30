@@ -247,7 +247,15 @@ router.get("/kappa", async (req, res) => {
 // ── GET /api/anotacion/banco ─────────────────────────────────
 // Lista paginada y filtrable de anotaciones ya hechas — para el
 // Banco de Anotaciones (revisión + edición + borrado).
-router.get("/banco", async (req, res) => {
+// Aislamiento para el Kappa: un anotador (no admin) no ve las anotaciones
+// de OTROS sobre oraciones del bloque compartido, porque vería cómo las
+// clasificó otra persona antes de anotarlas él mismo. Las propias siguen
+// visibles; el admin lo ve todo. Los no-admin pasan por requireAnotador
+// para conocer su perfil.
+const bancoAuth = (req, res, next) =>
+  req.usuario.rol === "admin" ? next() : requireAnotador(req, res, next);
+
+router.get("/banco", bancoAuth, async (req, res) => {
   try {
     const {
       anotador_id, categoria, confianza, q,
@@ -261,6 +269,11 @@ router.get("/banco", async (req, res) => {
     if (categoria)   { params.push(categoria);    where.push(`an.categoria = $${params.length}`); }
     if (confianza)   { params.push(confianza);    where.push(`an.confianza = $${params.length}`); }
     if (q?.trim())   { params.push(`%${q.trim()}%`); where.push(`o.texto ILIKE $${params.length}`); }
+    if (req.usuario.rol !== "admin") {
+      params.push(req.anotadorId);
+      where.push(`(an.anotador_id = $${params.length}
+                   OR an.oracion_id NOT IN (SELECT oracion_id FROM bloque_compartido))`);
+    }
 
     const whereSql = `WHERE ${where.join(" AND ")}`;
     const limiteN  = Math.min(100, Math.max(1, parseInt(limite) || 30));
@@ -326,8 +339,7 @@ router.get("/banco", async (req, res) => {
 
 // ── DELETE /api/anotacion/:id ────────────────────────────────
 // Borra una anotación (y sus elementos, por ON DELETE CASCADE).
-// Requiere ?anotador_id= que coincida con el dueño de la anotación —
-// mismo modelo de confianza que el resto de la app (sin login real).
+// Solo borra anotaciones del anotador de la sesión (requireAnotador).
 router.delete("/:id", requireAnotador, async (req, res) => {
   try {
     const anotador_id = req.anotadorId;
