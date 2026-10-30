@@ -285,7 +285,7 @@ function SelectorCategoria({ categoria, onChange }) {
             </button>
 
             {hoveredCat === cat && (
-              <div style={{
+              <div className="tip-in" style={{
                 position: "absolute",
                 bottom: "calc(100% + 10px)",
                 left: "50%",
@@ -344,7 +344,7 @@ function ElementosEditor({ categoria, elementos, setElementos, notas, setNotas }
   if (!categoria) return null;
 
   return (
-    <div style={{ background: CAT_BG[categoria], border: `1px solid ${CAT_COLOR[categoria]}40`, borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+    <div key={categoria} className="elementos-enter" style={{ background: CAT_BG[categoria], border: `1px solid ${CAT_COLOR[categoria]}40`, borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: CAT_COLOR[categoria], textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
         {categoria === "A" ? "Elementos factuales identificados" : "Elementos de sesgo detectados"}
@@ -490,7 +490,7 @@ function SelectorConfianza({ confianza, setConfianza }) {
             </button>
 
             {hoveredConf === c && (
-              <div style={{
+              <div className="tip-in" style={{
                 position: "absolute",
                 bottom: "calc(100% + 10px)",
                 left: "50%",
@@ -668,6 +668,15 @@ const EJEMPLOS = {
   },
 };
 
+function IconoFoco({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" />
+    </svg>
+  );
+}
+
 // Resalta en el texto los fragmentos marcados con el color de su tipo
 function resaltar(texto, marcas, color) {
   if (!marcas.length) return texto;
@@ -713,13 +722,9 @@ function PanelEjemplos() {
 
   if (!abierto) {
     return (
-      <button onMouseDown={sinFoco} onClick={() => setAbierto(true)} title="Abrir ejemplos" style={{
-        flex: "0 0 auto", alignSelf: "flex-start", background: "#fff",
-        border: "1.5px solid #e8e4dc", borderRadius: 8, padding: "10px 7px",
-        cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-        color: "#555", writingMode: "vertical-rl",
-      }}>
-        ‹ Ejemplos
+      <button className="ej-tab" onMouseDown={sinFoco} onClick={() => setAbierto(true)} title="Abrir ejemplos">
+        <IconoFoco />
+        <span className="ej-tab-texto">Ejemplos</span>
       </button>
     );
   }
@@ -729,7 +734,7 @@ function PanelEjemplos() {
   const inst     = tipo ? INSTRUCCIONES.find(i => i.cat === tipo) : null;
 
   return (
-    <div ref={panelRef} style={{
+    <div ref={panelRef} className="ej-panel" style={{
       flex: `0 0 ${anchoPct}%`, minWidth: 190, display: "flex", alignSelf: "stretch",
     }}>
       {/* Borde arrastrable */}
@@ -751,11 +756,8 @@ function PanelEjemplos() {
         maxHeight: "calc(100vh - 24px)", overflowY: "auto", alignSelf: "flex-start",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <strong style={{ fontSize: 13 }}>Ejemplos</strong>
-          <button onMouseDown={sinFoco} onClick={() => setAbierto(false)} title="Ocultar panel" style={{
-            background: "transparent", border: "1px solid #ddd", borderRadius: 8,
-            padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "#888", fontFamily: "inherit",
-          }}>›</button>
+          <span className="ej-cabecera"><IconoFoco size={16} />Ejemplos</span>
+          <button className="ej-cerrar" onMouseDown={sinFoco} onClick={() => setAbierto(false)} title="Ocultar panel">›</button>
         </div>
         <div style={{ fontSize: 11, color: "#999", marginBottom: 10, lineHeight: 1.45 }}>
           Solo consulta. Tu anotación sigue igual.
@@ -807,7 +809,7 @@ function PanelEjemplos() {
 
             {/* Ejemplos */}
             {lista.map((ej, i) => (
-              <div key={i} style={{ border: `1px solid ${CAT_COLOR[tipo]}40`, background: CAT_BG[tipo], borderRadius: 8, padding: "9px 10px", marginBottom: 8 }}>
+              <div key={`${tipo}-${subtipo}-${i}`} className="ej-card" style={{ "--i": i, border: `1px solid ${CAT_COLOR[tipo]}40`, background: CAT_BG[tipo], borderRadius: 8, padding: "9px 10px", marginBottom: 8 }}>
                 <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "#1a1a1a", marginBottom: 6 }}>
                   {resaltar(ej.texto, ej.marcas, CAT_COLOR[tipo])}
                 </div>
@@ -831,7 +833,7 @@ function PanelEjemplos() {
 // ── Componente: interfaz de anotación (formulario + panel) ─────
 function InterfazAnotacion({ anotador }) {
   return (
-    <div style={{ display: "flex", gap: 4, alignItems: "flex-start" }}>
+    <div className="vista-enter" style={{ display: "flex", gap: 4, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <FormularioAnotacion key={anotador.id} anotador={anotador} />
       </div>
@@ -972,8 +974,8 @@ function FormularioAnotacion({ anotador }) {
         </div>
       )}
 
-      {/* Oración principal */}
-      <div style={{
+      {/* Oración principal — key: remonta y anima al pasar a la siguiente */}
+      <div key={oracion.id} className="oracion-enter" style={{
         background: "#fff",
         border: categoria ? `2px solid ${CAT_COLOR[categoria]}` : "2px solid #e8e4dc",
         borderRadius: oracion.contexto_prev ? "0" : "8px 8px 0 0",
@@ -1061,7 +1063,7 @@ function FormularioAnotacion({ anotador }) {
                   ⚑ Compleja
                 </button>
                 {hoveredBtn === "compleja" && (
-                  <div style={{
+                  <div className="tip-in" style={{
                     position: "absolute", bottom: "calc(100% + 10px)", left: "50%",
                     transform: "translateX(-50%)", width: 250,
                     background: "#fef9ec", border: "1.5px solid #c89a2e",
@@ -1101,7 +1103,7 @@ function FormularioAnotacion({ anotador }) {
                   ✕ Ruido
                 </button>
                 {hoveredBtn === "ruido" && (
-                  <div style={{
+                  <div className="tip-in" style={{
                     position: "absolute", bottom: "calc(100% + 10px)", left: "50%",
                     transform: "translateX(-50%)", width: 250,
                     background: "#f5f0f0", border: "1.5px solid #999",
@@ -1156,7 +1158,7 @@ function FormularioAnotacion({ anotador }) {
 }
 
 // ── Componente: fila del Banco, con edición inline ─────────────
-function FilaAnotacion({ row, anotador, onGuardado, onEliminado }) {
+function FilaAnotacion({ row, indice = 0, anotador, onGuardado, onEliminado }) {
   const [editando, setEditando]       = useState(false);
   const [categoria, setCategoria]     = useState(row.categoria);
   const [elementos, setElementos]     = useState(
@@ -1222,7 +1224,7 @@ function FilaAnotacion({ row, anotador, onGuardado, onEliminado }) {
   };
 
   return (
-    <div style={{ background: "#fff", border: "1px solid #e8e4dc", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
+    <div className="fila-enter" style={{ "--i": indice, background: "#fff", border: "1px solid #e8e4dc", borderRadius: 8, padding: "14px 16px", marginBottom: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
         <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: "#aaa" }}>
           {row.fuente} · {row.titular_evento?.slice(0, 60)}
@@ -1373,7 +1375,7 @@ function BancoAnotaciones({ anotador }) {
   };
 
   return (
-    <div style={{ maxWidth: 780, margin: "0 auto" }}>
+    <div className="vista-enter" style={{ maxWidth: 780, margin: "0 auto" }}>
       {/* Filtros */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <select value={filtros.anotador_id} onChange={e => handleFiltro("anotador_id", e.target.value)}
@@ -1418,10 +1420,11 @@ function BancoAnotaciones({ anotador }) {
         </div>
       ) : (
         <>
-          {data.anotaciones.map(row => (
+          {data.anotaciones.map((row, i) => (
             <FilaAnotacion
               key={row.id}
               row={row}
+              indice={i}
               anotador={anotador}
               onGuardado={cargar}
               onEliminado={cargar}

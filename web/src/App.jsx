@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "./AuthContext";
 import { ThemeProvider } from "./ThemeContext";
 import ThemeToggle from "./components/ThemeToggle";
 import RouteGuard from "./RouteGuard";
+import PaginaTransicion from "./PaginaTransicion";
 import "./index.css";
 
 function NavAuth() {
@@ -91,26 +92,28 @@ function Shell() {
       </nav>
 
       <main className="main-content">
-        <Routes>
-          {/* Públicas — sin sesión */}
-          <Route path="/"            element={<Dashboard />} />
-          <Route path="/eventos"     element={<Eventos />} />
-          <Route path="/eventos/:id" element={<EventoDetalle />} />
-          <Route path="/login"       element={<Login />} />
+        <PaginaTransicion>
+          <Routes>
+            {/* Públicas — sin sesión */}
+            <Route path="/"            element={<Dashboard />} />
+            <Route path="/eventos"     element={<Eventos />} />
+            <Route path="/eventos/:id" element={<EventoDetalle />} />
+            <Route path="/login"       element={<Login />} />
 
-          {/* Anotador o admin */}
-          <Route path="/anotacion" element={
-            <RouteGuard roles={["anotador", "admin"]}><Anotacion /></RouteGuard>
-          } />
+            {/* Anotador o admin */}
+            <Route path="/anotacion" element={
+              <RouteGuard roles={["anotador", "admin"]}><Anotacion /></RouteGuard>
+            } />
 
-          {/* Solo admin */}
-          <Route path="/scraper" element={
-            <RouteGuard roles={["admin"]}><Scraper /></RouteGuard>
-          } />
-          <Route path="/clasificador" element={
-            <RouteGuard roles={["admin"]}><Clasificador /></RouteGuard>
-          } />
-        </Routes>
+            {/* Solo admin */}
+            <Route path="/scraper" element={
+              <RouteGuard roles={["admin"]}><Scraper /></RouteGuard>
+            } />
+            <Route path="/clasificador" element={
+              <RouteGuard roles={["admin"]}><Clasificador /></RouteGuard>
+            } />
+          </Routes>
+        </PaginaTransicion>
       </main>
 
       <footer className="app-foot">
