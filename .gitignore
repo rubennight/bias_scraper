@@ -28,3 +28,8 @@ logs/
 # IDEs
 .vscode/
 .idea/
+
+# Graphify
+graphify-out/
+.graphify*
+graphify*.json

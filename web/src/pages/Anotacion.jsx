@@ -534,8 +534,314 @@ function SelectorConfianza({ confianza, setConfianza }) {
   );
 }
 
-// ── Componente: interfaz de anotación ─────────────────────────
+// ── Ejemplos de consulta por tipo y subtipo ───────────────────
+// Ejemplos ilustrativos (mock-up) construidos a partir de los tests de la
+// taxonomía. Son fijos y no vienen de la BD, así que no exponen las
+// anotaciones de otros anotadores (no contaminan el Kappa).
+// marcas: fragmentos que se resaltan; alt: alternativa neutral (solo B/C).
+const EJEMPLOS = {
+  A: {
+    accion: [
+      { texto: "Rocha Moya firmó el decreto el martes 29 de abril.",
+        marcas: [{ t: "firmó el decreto" }],
+        motivo: "Acción física concreta y datable: existe el documento firmado." },
+      { texto: "Policías estatales detuvieron a tres sospechosos en Fresnillo la madrugada del jueves.",
+        marcas: [{ t: "detuvieron a tres sospechosos" }],
+        motivo: "Acción con fecha y lugar; se verifica en el parte policial." },
+    ],
+    declaracion: [
+      { texto: "La Secretaría de Salud informó que se aplicaron 12 mil dosis durante la jornada.",
+        marcas: [{ t: "La Secretaría de Salud informó" }],
+        motivo: "Afirmación atribuida a un ente identificable. Lo verificable es que lo dijo." },
+      { texto: "El DOJ acusó a los tres hombres de lavado de dinero.",
+        marcas: [{ t: "El DOJ acusó" }],
+        motivo: "Acusación formal de una institución concreta, con registro público." },
+    ],
+    cifra: [
+      { texto: "La Secretaría de Hacienda reportó un déficit de 3.2% del PIB al cierre del trimestre.",
+        marcas: [{ t: "déficit de 3.2% del PIB" }],
+        motivo: "Dato numérico con fuente identificable." },
+      { texto: "El gobierno estatal destinó 240 millones de pesos a la obra, según el presupuesto publicado.",
+        marcas: [{ t: "240 millones de pesos" }],
+        motivo: "Cifra comprobable en el presupuesto publicado." },
+    ],
+    historico: [
+      { texto: "En 2019, el Congreso aprobó la reforma constitucional que creó la Guardia Nacional.",
+        marcas: [{ t: "En 2019, el Congreso aprobó la reforma constitucional" }],
+        motivo: "Hecho pasado verificable, usado como contexto de la nota." },
+      { texto: "El tratado comercial entró en vigor el 1 de julio de 2020.",
+        marcas: [{ t: "entró en vigor el 1 de julio de 2020" }],
+        motivo: "Fecha pasada comprobable que sitúa el hecho actual." },
+    ],
+    legal: [
+      { texto: "Un juez dictó auto de formal prisión contra el exalcalde por peculado.",
+        marcas: [{ t: "dictó auto de formal prisión" }],
+        motivo: "Estatus jurídico formal, con expediente." },
+      { texto: "La Fiscalía vinculó a proceso al director por uso indebido de atribuciones.",
+        marcas: [{ t: "vinculó a proceso" }],
+        motivo: "Etapa procesal formal; es un hecho jurídico, no una opinión." },
+    ],
+  },
+  B: {
+    lexical: [
+      { texto: "Firmó el polémico decreto en un oscuro acto.",
+        marcas: [{ t: "polémico", alt: "se elimina" }, { t: "oscuro", alt: "se elimina" }],
+        motivo: "Si se quitan, el hecho (firmó el decreto) queda igual: son juicios agregados." },
+      { texto: "Lamentablemente, la situación empeoró.",
+        marcas: [{ t: "Lamentablemente", alt: "se elimina" }],
+        motivo: "El adverbio solo agrega opinión; no aporta ningún dato." },
+    ],
+    metafora: [
+      { texto: "La economía sufrió un duro golpe tras el anuncio.",
+        marcas: [{ t: "sufrió un duro golpe", alt: "bajó / cayó (con la cifra)" }],
+        motivo: "Imagen figurada valorativa que se puede quitar sin perder el dato." },
+      { texto: "Las negociaciones se enredaron en una maraña de exigencias.",
+        marcas: [{ t: "se enredaron en una maraña de exigencias", alt: "continuaron" }],
+        motivo: "La metáfora califica el proceso; el hecho es que hubo negociaciones." },
+    ],
+    epistemico: [
+      { texto: "El gobernador pretende aprovechar el evento para ganar simpatías.",
+        marcas: [{ t: "pretende aprovechar el evento para ganar simpatías", alt: "se elimina o se atribuye a una fuente" }],
+        motivo: "Presenta una intención como hecho; ninguna fuente la acredita." },
+      { texto: "El anuncio busca desviar la atención del escándalo.",
+        marcas: [{ t: "busca desviar la atención del escándalo", alt: "se elimina o se atribuye a una fuente" }],
+        motivo: "Atribuye un propósito sin evidencia verificable." },
+    ],
+    omision: [
+      { texto: "La empresa celebró un récord de ventas.",
+        marcas: [{ t: "récord de ventas", alt: "agregar el dato ausente" }],
+        motivo: "Dato ausente: la cifra incluye 40 tiendas nuevas. Sin eso, el lector entiende otra cosa." },
+      { texto: "El alcalde presumió la baja en los homicidios.",
+        marcas: [{ t: "baja en los homicidios", alt: "agregar el periodo comparado" }],
+        motivo: "Dato ausente: la comparación es contra un mes atípico. Cambia el sentido de la afirmación." },
+    ],
+    encuadre: [
+      { texto: "Tras años de promesas incumplidas, finalmente se inauguró el hospital.",
+        marcas: [{ t: "Tras años de promesas incumplidas, finalmente" }],
+        motivo: "La estructura de la frase impone un relato de demora; no hay una palabra puntual que sustituir." },
+      { texto: "Pese a las críticas, el presidente municipal logró inaugurar la obra.",
+        marcas: [{ t: "Pese a las críticas" }, { t: "logró" }],
+        motivo: "El armado de la oración encuadra el hecho como una hazaña frente a la oposición." },
+    ],
+  },
+  C: {
+    lexical: [
+      { texto: "Los vándalos tomaron la plaza.",
+        marcas: [{ t: "vándalos", alt: "manifestantes" }],
+        motivo: "Existe un sinónimo más neutral; el hecho es el mismo, pero la palabra revela postura." },
+      { texto: "El régimen de Sheinbaum responde.",
+        marcas: [{ t: "régimen de Sheinbaum", alt: "el gobierno federal" }],
+        motivo: "Elección léxica con carga política; se sustituye, no se quita." },
+      { texto: "La guerra comercial entre ambos países se agrava.",
+        marcas: [{ t: "guerra comercial", alt: "disputa arancelaria" }],
+        motivo: "Sinónimo con carga que un medio de otra orientación diría distinto." },
+    ],
+    metafora: [
+      { texto: "El gobierno quiso estrangular a la prensa independiente.",
+        marcas: [{ t: "estrangular", alt: "limitar el financiamiento de" }],
+        motivo: "Imagen figurada con carga ideológica y alternativa neutral disponible." },
+      { texto: "La oposición capituló ante el oficialismo.",
+        marcas: [{ t: "capituló ante", alt: "votó a favor de la propuesta de" }],
+        motivo: "La metáfora de rendición presenta como derrota lo que fue un voto." },
+    ],
+    epistemico: [
+      { texto: "Morena busca perpetuarse en el poder con la reforma.",
+        marcas: [{ t: "busca perpetuarse en el poder", alt: "propone una reforma que, según la oposición, ..." }],
+        motivo: "Intención política presentada como hecho; debería atribuirse a quien la sostiene." },
+      { texto: "La oposición sabotea la reforma para frenar el cambio.",
+        marcas: [{ t: "sabotea la reforma para frenar el cambio", alt: "votó en contra de la reforma" }],
+        motivo: "Motivo ideológico dado como cierto. Lo verificable es el voto." },
+    ],
+    omision: [
+      { texto: "Los manifestantes agredieron a policías en el Zócalo.",
+        marcas: [{ t: "agredieron a policías", alt: "agregar el dato ausente" }],
+        motivo: "Dato ausente: la policía usó gas antes del enfrentamiento. Sin él, el lector asigna la culpa a un solo lado." },
+    ],
+    encuadre: [
+      { texto: "Otra vez el gobierno federal abandonó a Zacatecas: sin recursos, sin obras y sin respuestas.",
+        marcas: [{ t: "Otra vez el gobierno federal abandonó a Zacatecas" }],
+        motivo: "Toda la oración construye un marco de abandono; no hay una palabra suelta que cambiar." },
+      { texto: "La oposición, aliada de los de siempre, se une para defender sus privilegios.",
+        marcas: [{ t: "aliada de los de siempre" }, { t: "defender sus privilegios" }],
+        motivo: "Marco ideológico del lado contrario, para contrastar: la estructura impone la interpretación." },
+    ],
+  },
+};
+
+// Resalta en el texto los fragmentos marcados con el color de su tipo
+function resaltar(texto, marcas, color) {
+  if (!marcas.length) return texto;
+  const patron = marcas.map(m => m.t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return texto.split(new RegExp(`(${patron})`)).map((trozo, i) =>
+    marcas.some(m => m.t === trozo)
+      ? <mark key={i} style={{ background: `${color}22`, color, fontWeight: 700, borderRadius: 4, padding: "0 2px" }}>{trozo}</mark>
+      : trozo
+  );
+}
+
+// ── Componente: panel lateral de ejemplos (solo consulta) ──────
+// Se puede plegar y ensanchar arrastrando su borde. No toca el estado
+// del formulario de anotación.
+function PanelEjemplos() {
+  const [abierto, setAbierto]   = useState(true);
+  const [anchoPct, setAnchoPct] = useState(20);
+  const [tipo, setTipo]         = useState(null);
+  const [subtipo, setSubtipo]   = useState(null);
+  const panelRef    = useRef(null);
+  const arrastrando = useRef(false);
+
+  const elegirTipo = (t) => {
+    setTipo(t);
+    setSubtipo((t === "A" ? SUBTIPOS_A : SUBTIPOS_BC)[0].value);
+  };
+
+  const iniciarArrastre = (e) => {
+    arrastrando.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const moverArrastre = (e) => {
+    if (!arrastrando.current || !panelRef.current) return;
+    const r = panelRef.current.parentElement.getBoundingClientRect();
+    const pct = ((r.right - e.clientX) / r.width) * 100;
+    setAnchoPct(Math.min(45, Math.max(14, pct)));
+  };
+  const terminarArrastre = () => { arrastrando.current = false; };
+
+  // Los botones del panel no toman el foco: así Enter (atajo de guardar
+  // de la anotación) no activa un botón del panel por accidente.
+  const sinFoco = (e) => e.preventDefault();
+
+  if (!abierto) {
+    return (
+      <button onMouseDown={sinFoco} onClick={() => setAbierto(true)} title="Abrir ejemplos" style={{
+        flex: "0 0 auto", alignSelf: "flex-start", background: "#fff",
+        border: "1.5px solid #e8e4dc", borderRadius: 8, padding: "10px 7px",
+        cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+        color: "#555", writingMode: "vertical-rl",
+      }}>
+        ‹ Ejemplos
+      </button>
+    );
+  }
+
+  const subtipos = tipo === "A" ? SUBTIPOS_A : SUBTIPOS_BC;
+  const lista    = tipo && subtipo ? EJEMPLOS[tipo][subtipo] || [] : [];
+  const inst     = tipo ? INSTRUCCIONES.find(i => i.cat === tipo) : null;
+
+  return (
+    <div ref={panelRef} style={{
+      flex: `0 0 ${anchoPct}%`, minWidth: 190, display: "flex", alignSelf: "stretch",
+    }}>
+      {/* Borde arrastrable */}
+      <div
+        onPointerDown={iniciarArrastre}
+        onPointerMove={moverArrastre}
+        onPointerUp={terminarArrastre}
+        onPointerCancel={terminarArrastre}
+        onDoubleClick={() => setAnchoPct(20)}
+        title="Arrastra para ensanchar · doble clic para restablecer"
+        style={{ width: 8, cursor: "col-resize", touchAction: "none", flexShrink: 0, display: "flex", justifyContent: "center" }}
+      >
+        <div style={{ width: 3, borderRadius: 3, background: "#e8e4dc" }} />
+      </div>
+
+      <div style={{
+        flex: 1, minWidth: 0, background: "#fff", border: "1.5px solid #e8e4dc",
+        borderRadius: 8, padding: "12px 12px", position: "sticky", top: 12,
+        maxHeight: "calc(100vh - 24px)", overflowY: "auto", alignSelf: "flex-start",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <strong style={{ fontSize: 13 }}>Ejemplos</strong>
+          <button onMouseDown={sinFoco} onClick={() => setAbierto(false)} title="Ocultar panel" style={{
+            background: "transparent", border: "1px solid #ddd", borderRadius: 8,
+            padding: "2px 8px", cursor: "pointer", fontSize: 12, color: "#888", fontFamily: "inherit",
+          }}>›</button>
+        </div>
+        <div style={{ fontSize: 11, color: "#999", marginBottom: 10, lineHeight: 1.45 }}>
+          Solo consulta. Tu anotación sigue igual.
+        </div>
+
+        {/* Tipo */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {["A", "B", "C"].map(t => (
+            <button key={t} onMouseDown={sinFoco} onClick={() => elegirTipo(t)} style={{
+              flex: 1, padding: "8px 0", borderRadius: 8, fontSize: 14, fontWeight: 700,
+              fontFamily: "inherit", cursor: "pointer",
+              background: tipo === t ? CAT_COLOR[t] : "#fff",
+              color: tipo === t ? "#fff" : CAT_COLOR[t],
+              border: `2px solid ${CAT_COLOR[t]}`,
+            }}>{t}</button>
+          ))}
+        </div>
+
+        {!tipo && (
+          <div style={{ fontSize: 12, color: "#999", lineHeight: 1.5 }}>
+            Elige A, B o C para ver ejemplos por subtipo.
+          </div>
+        )}
+
+        {tipo && (
+          <>
+            <div style={{ background: inst.bg, border: `1px solid ${inst.color}40`, borderRadius: 8, padding: "7px 9px", fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
+              <strong style={{ color: inst.color }}>{inst.titulo}</strong>
+              <div style={{ color: "#555", marginTop: 3 }}>{inst.criterio}</div>
+            </div>
+
+            {/* Subtipos */}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+              {subtipos.map(s => (
+                <button key={s.value} onMouseDown={sinFoco} onClick={() => setSubtipo(s.value)} title={s.desc} style={{
+                  padding: "4px 9px", borderRadius: 10, fontSize: 11.5, fontFamily: "inherit", cursor: "pointer",
+                  background: subtipo === s.value ? CAT_COLOR[tipo] : "transparent",
+                  color: subtipo === s.value ? "#fff" : "#666",
+                  border: `1px solid ${subtipo === s.value ? CAT_COLOR[tipo] : "#ddd"}`,
+                }}>{s.label}</button>
+              ))}
+            </div>
+
+            {subtipo && (
+              <div style={{ fontSize: 11, color: "#888", marginBottom: 8, lineHeight: 1.45 }}>
+                {subtipos.find(s => s.value === subtipo)?.desc}
+              </div>
+            )}
+
+            {/* Ejemplos */}
+            {lista.map((ej, i) => (
+              <div key={i} style={{ border: `1px solid ${CAT_COLOR[tipo]}40`, background: CAT_BG[tipo], borderRadius: 8, padding: "9px 10px", marginBottom: 8 }}>
+                <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "#1a1a1a", marginBottom: 6 }}>
+                  {resaltar(ej.texto, ej.marcas, CAT_COLOR[tipo])}
+                </div>
+                {ej.marcas.some(m => m.alt) && (
+                  <div style={{ fontSize: 11, color: "#555", marginBottom: 4 }}>
+                    {ej.marcas.filter(m => m.alt).map((m, j) => (
+                      <div key={j}><strong>{m.t}</strong> → {m.alt}</div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: "#777", fontStyle: "italic", lineHeight: 1.45 }}>{ej.motivo}</div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Componente: interfaz de anotación (formulario + panel) ─────
 function InterfazAnotacion({ anotador }) {
+  return (
+    <div style={{ display: "flex", gap: 4, alignItems: "flex-start" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <FormularioAnotacion key={anotador.id} anotador={anotador} />
+      </div>
+      <PanelEjemplos />
+    </div>
+  );
+}
+
+// ── Componente: formulario de anotación ───────────────────────
+function FormularioAnotacion({ anotador }) {
   const [oraciones, setOraciones]     = useState([]);
   const [idx, setIdx]                 = useState(0);
   const [categoria, setCategoria]     = useState(null);
@@ -551,8 +857,9 @@ function InterfazAnotacion({ anotador }) {
 
   const esPiloto = guardadas < 50;
 
+  // `cargando` arranca en true y InterfazAnotacion remonta este componente
+  // (key) al cambiar de anotador, así que no hace falta activarlo aquí.
   useEffect(() => {
-    setCargando(true);
     getOracionesPendientes({ anotador_id: anotador.id, limite: 50, piloto: true })
       .then(r => { setOraciones(r.data); setCargando(false); })
       .catch(() => setCargando(false));
@@ -1015,34 +1322,40 @@ function BancoAnotaciones({ anotador }) {
   const [qInput, setQInput]         = useState("");
   const [filtros, setFiltros]       = useState({ anotador_id: "", categoria: "", confianza: "", q: "" });
   const [pagina, setPagina]         = useState(1);
-  const [data, setData]             = useState({ anotaciones: [], total: 0, total_paginas: 1 });
-  const [cargando, setCargando]     = useState(true);
-  const [error, setError]           = useState("");
+  const [recarga, setRecarga]       = useState(0);
+  const [resultado, setResultado]   = useState({
+    clave: null, data: { anotaciones: [], total: 0, total_paginas: 1 }, error: "",
+  });
   const debounceRef = useRef(null);
 
   useEffect(() => {
     getAnotadores().then(r => setAnotadores(r.data)).catch(() => {});
   }, []);
 
-  const cargar = useCallback(async () => {
-    setCargando(true);
-    setError("");
-    try {
-      const params = { pagina, limite: LIMITE_BANCO };
-      if (filtros.anotador_id) params.anotador_id = filtros.anotador_id;
-      if (filtros.categoria)   params.categoria   = filtros.categoria;
-      if (filtros.confianza)   params.confianza   = filtros.confianza;
-      if (filtros.q)           params.q           = filtros.q;
-      const r = await getBancoAnotaciones(params);
-      setData(r.data);
-    } catch (e) {
-      setError("Error al cargar el banco de anotaciones");
-    } finally {
-      setCargando(false);
-    }
-  }, [filtros, pagina]);
+  // Cada combinación de filtros/página/recarga es una "clave". Mientras el
+  // resultado guardado no corresponda a la clave actual, se está cargando;
+  // así el efecto solo actualiza estado al llegar la respuesta.
+  const clave = [pagina, filtros.anotador_id, filtros.categoria, filtros.confianza, filtros.q, recarga].join("|");
+  const cargando = resultado.clave !== clave;
+  const { data, error } = resultado;
 
-  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => {
+    let vigente = true;
+    const params = { pagina, limite: LIMITE_BANCO };
+    if (filtros.anotador_id) params.anotador_id = filtros.anotador_id;
+    if (filtros.categoria)   params.categoria   = filtros.categoria;
+    if (filtros.confianza)   params.confianza   = filtros.confianza;
+    if (filtros.q)           params.q           = filtros.q;
+    getBancoAnotaciones(params)
+      .then(r => { if (vigente) setResultado({ clave, data: r.data, error: "" }); })
+      .catch(() => {
+        if (vigente) setResultado(prev => ({ ...prev, clave, error: "Error al cargar el banco de anotaciones" }));
+      });
+    return () => { vigente = false; };
+  }, [clave, filtros, pagina]);
+
+  // Vuelve a pedir la página actual (tras editar o eliminar una anotación)
+  const cargar = () => setRecarga(n => n + 1);
 
   // Búsqueda de texto con debounce — resetea a página 1 en cada cambio de filtro
   const handleQChange = (valor) => {
