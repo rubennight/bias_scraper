@@ -63,9 +63,11 @@ async function main() {
 
   try {
     const result = await pool.query(
-      `INSERT INTO usuarios (usuario, password_hash, rol)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (usuario) DO UPDATE SET password_hash = EXCLUDED.password_hash, rol = EXCLUDED.rol
+      // estado='aprobado': las cuentas creadas a mano por el admin no pasan
+      // por la aprobación (el default de la columna es 'pendiente').
+      `INSERT INTO usuarios (usuario, password_hash, rol, estado)
+       VALUES ($1, $2, $3, 'aprobado')
+       ON CONFLICT (usuario) DO UPDATE SET password_hash = EXCLUDED.password_hash, rol = EXCLUDED.rol, estado = 'aprobado'
        RETURNING id, usuario, rol, creado_en`,
       [usuario, hash, rol]
     );

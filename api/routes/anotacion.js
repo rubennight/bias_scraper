@@ -2,6 +2,10 @@
 
 const router = require("express").Router();
 const pool   = require("../db");
+const { requireRole, requireAnotador } = require("../middleware/auth");
+const { obtenerCola, progresoBloque } = require("../lib/cola");
+const { validarAnotacion } = require("../lib/validar-anotacion");
+const { condicionAislamiento } = require("../lib/banco");
 
 // ── GET /api/anotacion/anotadores ────────────────────────────
 router.get("/anotadores", async (req, res) => {
@@ -20,7 +24,7 @@ router.get("/anotadores", async (req, res) => {
 });
 
 // ── POST /api/anotacion/anotadores ───────────────────────────
-router.post("/anotadores", async (req, res) => {
+router.post("/anotadores", requireRole("admin"), async (req, res) => {
   try {
     const { nombre, descripcion } = req.body;
     if (!nombre?.trim())
@@ -37,54 +41,25 @@ router.post("/anotadores", async (req, res) => {
 });
 
 // ── GET /api/anotacion/oraciones ─────────────────────────────
-// Retorna oraciones pendientes para un anotador.
-// Orden: aleatorio entre artículos (usando MD5 estable),
-//        secuencial dentro de cada artículo (por posición).
-router.get("/oraciones", async (req, res) => {
+// Retorna la cola de oraciones del anotador de la sesión: primero el
+// bloque compartido (iguales para todos, sirve para el Kappa) y después
+// oraciones al azar con orden propio — ver lib/cola.js.
+router.get("/oraciones", requireAnotador, async (req, res) => {
   try {
-    const { anotador_id, limite = 50 } = req.query;
-    if (!anotador_id)
-      return res.status(400).json({ error: "anotador_id requerido" });
-
-    const result = await pool.query(`
-      SELECT
-        o.id,
-        o.texto,
-        o.contexto_prev,
-        o.contexto_sig,
-        o.posicion,
-        o.num_palabras,
-        a.id          AS articulo_id,
-        a.titular     AS titular_articulo,
-        f.nombre      AS fuente,
-        f.orientacion,
-        ev.id         AS evento_id,
-        ev.titular_evento
-      FROM oraciones o
-      JOIN articulos a  ON a.id  = o.articulo_id
-      JOIN fuentes   f  ON f.id  = a.fuente_id
-      JOIN eventos   ev ON ev.id = a.evento_id
-      WHERE o.id NOT IN (
-        SELECT oracion_id FROM anotaciones
-        WHERE anotador_id = $1 AND version = 1
-      )
-      AND (o.compleja IS NULL OR o.compleja = FALSE)
-      AND (o.descartada IS NULL OR o.descartada = FALSE)
-      ORDER BY MD5(a.id::text), o.posicion
-      LIMIT $2
-    `, [anotador_id, parseInt(limite)]);
-
-    res.json(result.rows);
+    const limite = Math.min(Math.max(parseInt(req.query.limite) || 50, 1), 500);
+    res.json(await obtenerCola(pool, req.anotadorId, limite));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── GET /api/anotacion/stats/:anotador_id ────────────────────
-router.get("/stats/:anotador_id", async (req, res) => {
+router.get("/stats/:anotador_id", requireAnotador, async (req, res) => {
   try {
-    const { anotador_id } = req.params;
-    const [totales, porCategoria, totalOraciones] = await Promise.all([
+    // El :anotador_id de la ruta se conserva por compatibilidad, pero se
+    // ignora: las estadísticas son siempre las del usuario de la sesión.
+    const anotador_id = req.anotadorId;
+    const [totales, porCategoria, totalOraciones, bloque] = await Promise.all([
       pool.query(`
         SELECT COUNT(*) AS anotadas FROM anotaciones
         WHERE anotador_id = $1 AND version = 1
@@ -99,11 +74,13 @@ router.get("/stats/:anotador_id", async (req, res) => {
         WHERE (compleja IS NULL OR compleja = FALSE)
           AND (descartada IS NULL OR descartada = FALSE)
       `),
+      progresoBloque(pool, anotador_id),
     ]);
     res.json({
       anotadas:     parseInt(totales.rows[0].anotadas),
       total:        parseInt(totalOraciones.rows[0].total),
       porCategoria: Object.fromEntries(porCategoria.rows.map(r => [r.categoria, parseInt(r.total)])),
+      bloque,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -111,21 +88,27 @@ router.get("/stats/:anotador_id", async (req, res) => {
 });
 
 // ── POST /api/anotacion/anotar ───────────────────────────────
-router.post("/anotar", async (req, res) => {
+router.post("/anotar", requireAnotador, async (req, res) => {
   const client = await pool.connect();
   try {
+    const anotador_id = req.anotadorId;
     const {
-      oracion_id, anotador_id, categoria,
+      oracion_id, categoria,
       elemento_sesgo, alternativa,
       elementos = [],
       confianza = "alta",
       notas, version = 1,
     } = req.body;
 
-    if (!oracion_id || !anotador_id || !categoria)
-      return res.status(400).json({ error: "oracion_id, anotador_id y categoria son obligatorios" });
+    if (!oracion_id || !categoria)
+      return res.status(400).json({ error: "oracion_id y categoria son obligatorios" });
     if (!["A", "B", "C"].includes(categoria))
       return res.status(400).json({ error: "categoria debe ser A, B o C" });
+
+    // Reglas de obligatorio/opcional (ver lib/validar-anotacion.js)
+    const errores = validarAnotacion(categoria, elementos);
+    if (errores.length)
+      return res.status(400).json({ error: errores[0], errores });
 
     await client.query("BEGIN");
 
@@ -173,7 +156,9 @@ router.post("/anotar", async (req, res) => {
 // Lexicón separado en dos tablas:
 // - sesgo (tipo B y C): pares elemento/alternativa del lexicón valente MX
 // - facticidad (tipo A): inventario de elementos factuales por subtipo
-router.get("/lexicon", async (req, res) => {
+// Solo admin: devuelve los elementos de TODOS los anotadores, incluidos los del
+// bloque compartido, y los consume Clasificador (que es solo admin).
+router.get("/lexicon", requireRole("admin"), async (req, res) => {
   try {
     const { tipo } = req.query;
 
@@ -212,7 +197,9 @@ router.get("/lexicon", async (req, res) => {
 });
 
 // ── GET /api/anotacion/kappa ─────────────────────────────────
-router.get("/kappa", async (req, res) => {
+// Solo admin: calculado entre dos anotadores cualquiera revela cómo clasificó
+// uno de ellos las oraciones compartidas.
+router.get("/kappa", requireRole("admin"), async (req, res) => {
   try {
     const { anotador1_id, anotador2_id, version = 1 } = req.query;
     const result = await pool.query(`
@@ -271,7 +258,15 @@ router.get("/kappa", async (req, res) => {
 // ── GET /api/anotacion/banco ─────────────────────────────────
 // Lista paginada y filtrable de anotaciones ya hechas — para el
 // Banco de Anotaciones (revisión + edición + borrado).
-router.get("/banco", async (req, res) => {
+// Aislamiento para el Kappa: un anotador (no admin) no ve las anotaciones
+// de OTROS sobre oraciones del bloque compartido, porque vería cómo las
+// clasificó otra persona antes de anotarlas él mismo. Las propias siguen
+// visibles; el admin lo ve todo. Los no-admin pasan por requireAnotador
+// para conocer su perfil.
+const bancoAuth = (req, res, next) =>
+  req.usuario.rol === "admin" ? next() : requireAnotador(req, res, next);
+
+router.get("/banco", bancoAuth, async (req, res) => {
   try {
     const {
       anotador_id, categoria, confianza, q,
@@ -285,6 +280,8 @@ router.get("/banco", async (req, res) => {
     if (categoria)   { params.push(categoria);    where.push(`an.categoria = $${params.length}`); }
     if (confianza)   { params.push(confianza);    where.push(`an.confianza = $${params.length}`); }
     if (q?.trim())   { params.push(`%${q.trim()}%`); where.push(`o.texto ILIKE $${params.length}`); }
+    const aislamiento = condicionAislamiento(req.usuario.rol, req.anotadorId, params);
+    if (aislamiento) where.push(aislamiento);
 
     const whereSql = `WHERE ${where.join(" AND ")}`;
     const limiteN  = Math.min(100, Math.max(1, parseInt(limite) || 30));
@@ -350,13 +347,10 @@ router.get("/banco", async (req, res) => {
 
 // ── DELETE /api/anotacion/:id ────────────────────────────────
 // Borra una anotación (y sus elementos, por ON DELETE CASCADE).
-// Requiere ?anotador_id= que coincida con el dueño de la anotación —
-// mismo modelo de confianza que el resto de la app (sin login real).
-router.delete("/:id", async (req, res) => {
+// Solo borra anotaciones del anotador de la sesión (requireAnotador).
+router.delete("/:id", requireAnotador, async (req, res) => {
   try {
-    const { anotador_id } = req.query;
-    if (!anotador_id)
-      return res.status(400).json({ error: "anotador_id requerido" });
+    const anotador_id = req.anotadorId;
 
     const result = await pool.query(`
       DELETE FROM anotaciones WHERE id = $1 AND anotador_id = $2 RETURNING id
@@ -375,6 +369,10 @@ router.delete("/:id", async (req, res) => {
 router.put("/oraciones/:id/compleja", async (req, res) => {
   try {
     const { compleja = true } = req.body;
+    // Quitar la marca la reserva el admin: una oración marcada sale de la cola
+    // de todos (y del bloque compartido), y un anotador no debe deshacerlo.
+    if (compleja === false && req.usuario.rol !== "admin")
+      return res.status(403).json({ error: "Solo un administrador puede quitar esta marca" });
     const result = await pool.query(`
       UPDATE oraciones SET compleja = $1 WHERE id = $2 RETURNING id, compleja
     `, [compleja, req.params.id]);
@@ -390,6 +388,8 @@ router.put("/oraciones/:id/compleja", async (req, res) => {
 router.put("/oraciones/:id/descartada", async (req, res) => {
   try {
     const { descartada = true } = req.body;
+    if (descartada === false && req.usuario.rol !== "admin")
+      return res.status(403).json({ error: "Solo un administrador puede quitar esta marca" });
     const result = await pool.query(`
       UPDATE oraciones SET descartada = $1 WHERE id = $2 RETURNING id, descartada
     `, [descartada, req.params.id]);

@@ -1,4 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useAuth } from "../AuthContext";
+import ResumenEvento from "../components/ResumenEvento";
+import { validarAnotacion } from "../anotacion/validar";
+import { EJEMPLOS_MIXTOS } from "../anotacion/ejemplosMixtos";
+import { GUIA_CAMPOS, PASOS, CASOS_LIMITE, REGLA_DOMINANTE } from "../anotacion/guiaCampos";
 import {
   getAnotadores, crearAnotador,
   getOracionesPendientes, guardarAnotacion,
@@ -119,6 +124,22 @@ function Instrucciones({ onContinuar }) {
         ))}
       </div>
 
+      <div style={{ border: "1px solid #d8d1bf", borderRadius: 8, padding: "1rem 1.25rem", marginBottom: 12, background: "#fff" }}>
+        <strong style={{ fontSize: 13 }}>Qué es obligatorio y qué opcional</strong>
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          {GUIA_CAMPOS.map(c => (
+            <div key={c.campo} style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 13 }}>
+              <span style={{ flex: "0 0 92px", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: COLOR_ESTADO[c.estado] }}>{c.estado}</span>
+              <span style={{ color: "#444", lineHeight: 1.5 }}><strong>{c.campo}.</strong> {c.detalle}</span>
+            </div>
+          ))}
+        </div>
+        <p style={{ marginTop: 12, fontSize: 13, color: "#555", lineHeight: 1.6 }}>{REGLA_DOMINANTE}</p>
+        <p style={{ marginTop: 6, fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+          Durante la anotación, el panel «Ejemplos» tiene ejemplos por subtipo, oraciones mixtas y esta guía completa con los casos límite.
+        </p>
+      </div>
+
       <div style={{
         background: "#f4efe5", border: "1px solid #d8d1bf",
         borderRadius: 8, padding: "1rem 1.25rem", marginBottom: 24,
@@ -126,7 +147,7 @@ function Instrucciones({ onContinuar }) {
         <strong style={{ fontSize: 13 }}>💡 Consejos prácticos</strong>
         <ul style={{ marginTop: 8, paddingLeft: 18, fontSize: 13, color: "#555", lineHeight: 1.7 }}>
           <li>Lee el contexto previo y siguiente antes de clasificar.</li>
-          <li>Si una oración mezcla A y B, clasifícala por el elemento dominante.</li>
+          <li>Si una oración mezcla A, B y C, clasifícala por la categoría que más orienta la lectura de la oración completa, no por el número de elementos.</li>
           <li>Si dudas entre B y C, pregúntate: ¿existe un sinónimo más neutral? Si sí → C.</li>
           <li>Cuando marques B o C, indica qué palabra tiene el sesgo y cuál sería la alternativa neutral.</li>
           <li>Puedes bajar la confianza a "media" o "baja" si no estás seguro.</li>
@@ -147,6 +168,9 @@ function Instrucciones({ onContinuar }) {
 }
 
 // ── Componente: selección de anotador ─────────────────────────
+// Ya no se usa en el flujo: la identidad sale de la sesión. Se conserva
+// (principio aditivo) por si hace falta elegir perfil de nuevo.
+// eslint-disable-next-line no-unused-vars
 function SeleccionAnotador({ onSeleccionar }) {
   const [anotadores, setAnotadores] = useState([]);
   const [nuevo, setNuevo]           = useState(false);
@@ -688,6 +712,93 @@ function resaltar(texto, marcas, color) {
   );
 }
 
+// Resalta cada fragmento con el color del tipo de su elemento (A/B/C)
+function resaltarElementos(texto, elementos) {
+  const patron = elementos
+    .map(el => el.t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  return texto.split(new RegExp(`(${patron})`)).map((trozo, i) => {
+    const el = elementos.find(e => e.t === trozo);
+    return el
+      ? <mark key={i} style={{ background: `${CAT_COLOR[el.tipo]}22`, color: CAT_COLOR[el.tipo], fontWeight: 700, borderRadius: 4, padding: "0 2px" }}>{trozo}</mark>
+      : trozo;
+  });
+}
+
+// Pestaña "Mixtas": oraciones con elementos de varios tipos y su dominante
+function EjemplosMixtos() {
+  return (
+    <>
+      <div style={{ background: "#f4efe5", border: "1px solid #d8d1bf", borderRadius: 8, padding: "8px 10px", fontSize: 11, lineHeight: 1.5, marginBottom: 10, color: "#555" }}>
+        <strong style={{ color: "#1a1a1a" }}>Anotaciones mixtas.</strong> {REGLA_DOMINANTE}
+      </div>
+      {EJEMPLOS_MIXTOS.map((ej, i) => {
+        const tipos = [...new Set(ej.elementos.map(e => e.tipo))].sort();
+        return (
+          <div key={i} className="ej-card" style={{ "--i": i, border: `1px solid ${CAT_COLOR[ej.dominante]}40`, background: CAT_BG[ej.dominante], borderRadius: 8, padding: "9px 10px", marginBottom: 8 }}>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: "#999", marginBottom: 4 }}>
+              Elementos: {tipos.join(" · ")}
+            </div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "#1a1a1a", marginBottom: 6 }}>
+              {resaltarElementos(ej.texto, ej.elementos)}
+            </div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+              {ej.elementos.map((el, j) => (
+                <span key={j} style={{ fontSize: 10.5, background: CAT_BG[el.tipo], color: CAT_COLOR[el.tipo], border: `1px solid ${CAT_COLOR[el.tipo]}40`, borderRadius: 6, padding: "1px 6px" }}>
+                  {el.tipo}·{el.subtipo}{el.alt ? ` → ${el.alt}` : ""}
+                </span>
+              ))}
+            </div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: CAT_COLOR[ej.dominante], marginBottom: 3 }}>
+              Dominante: {ej.dominante}
+            </div>
+            <div style={{ fontSize: 11, color: "#777", fontStyle: "italic", lineHeight: 1.45 }}>{ej.porque}</div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+const COLOR_ESTADO = { Obligatorio: "#C0392B", Recomendado: "#c07800", Opcional: "#2e7d32" };
+
+const TITULO_SECCION = { fontSize: 10, textTransform: "uppercase", letterSpacing: ".06em", color: "#999", fontWeight: 700, margin: "4px 0 6px" };
+
+// Pestaña "Guía": pasos, qué es obligatorio y opcional, y casos límite
+function GuiaAnotacion() {
+  return (
+    <>
+      <div style={TITULO_SECCION}>Cómo anotar</div>
+      <ol style={{ margin: "0 0 14px", paddingLeft: 18, fontSize: 11.5, lineHeight: 1.55, color: "#444" }}>
+        {PASOS.map((paso, i) => <li key={i} style={{ marginBottom: 3 }}>{paso}</li>)}
+      </ol>
+
+      <div style={TITULO_SECCION}>Obligatorio y opcional</div>
+      {GUIA_CAMPOS.map(c => (
+        <div key={c.campo} style={{ borderLeft: `3px solid ${COLOR_ESTADO[c.estado]}`, padding: "4px 8px", marginBottom: 6, background: "#fafafa", borderRadius: "0 6px 6px 0" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#1a1a1a" }}>
+            {c.campo}{" "}
+            <span style={{ fontSize: 9.5, textTransform: "uppercase", letterSpacing: ".05em", color: COLOR_ESTADO[c.estado] }}>· {c.estado}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "#666", lineHeight: 1.45 }}>{c.detalle}</div>
+        </div>
+      ))}
+
+      <div style={{ ...TITULO_SECCION, marginTop: 14 }}>La dominante</div>
+      <div style={{ fontSize: 11.5, color: "#444", lineHeight: 1.5, marginBottom: 14 }}>{REGLA_DOMINANTE}</div>
+
+      <div style={TITULO_SECCION}>Casos límite</div>
+      {CASOS_LIMITE.map(c => (
+        <div key={c.titulo} style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#1a1a1a" }}>{c.titulo}</div>
+          <div style={{ fontSize: 11, color: "#666", lineHeight: 1.5 }}>{c.texto}</div>
+        </div>
+      ))}
+    </>
+  );
+}
+
 // ── Componente: panel lateral de ejemplos (solo consulta) ──────
 // Se puede plegar y ensanchar arrastrando su borde. No toca el estado
 // del formulario de anotación.
@@ -699,9 +810,10 @@ function PanelEjemplos() {
   const panelRef    = useRef(null);
   const arrastrando = useRef(false);
 
+  // tipo: "A" | "B" | "C" (ejemplos por subtipo), "M" (mixtas) o "G" (guía)
   const elegirTipo = (t) => {
     setTipo(t);
-    setSubtipo((t === "A" ? SUBTIPOS_A : SUBTIPOS_BC)[0].value);
+    setSubtipo(t === "M" || t === "G" ? null : (t === "A" ? SUBTIPOS_A : SUBTIPOS_BC)[0].value);
   };
 
   const iniciarArrastre = (e) => {
@@ -729,9 +841,10 @@ function PanelEjemplos() {
     );
   }
 
+  const esCategoria = tipo === "A" || tipo === "B" || tipo === "C";
   const subtipos = tipo === "A" ? SUBTIPOS_A : SUBTIPOS_BC;
-  const lista    = tipo && subtipo ? EJEMPLOS[tipo][subtipo] || [] : [];
-  const inst     = tipo ? INSTRUCCIONES.find(i => i.cat === tipo) : null;
+  const lista    = esCategoria && subtipo ? EJEMPLOS[tipo][subtipo] || [] : [];
+  const inst     = esCategoria ? INSTRUCCIONES.find(i => i.cat === tipo) : null;
 
   return (
     <div ref={panelRef} className="ej-panel" style={{
@@ -776,13 +889,29 @@ function PanelEjemplos() {
           ))}
         </div>
 
+        {/* Mixtas y Guía */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {[{ id: "M", label: "Mixtas" }, { id: "G", label: "Guía" }].map(b => (
+            <button key={b.id} onMouseDown={sinFoco} onClick={() => elegirTipo(b.id)} style={{
+              flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 600,
+              fontFamily: "inherit", cursor: "pointer",
+              background: tipo === b.id ? "#1a1a1a" : "#fff",
+              color: tipo === b.id ? "#fff" : "#444",
+              border: "1.5px solid #1a1a1a",
+            }}>{b.label}</button>
+          ))}
+        </div>
+
         {!tipo && (
           <div style={{ fontSize: 12, color: "#999", lineHeight: 1.5 }}>
-            Elige A, B o C para ver ejemplos por subtipo.
+            Elige A, B o C para ver ejemplos por subtipo, Mixtas para oraciones con varios tipos, o Guía para saber qué es obligatorio.
           </div>
         )}
 
-        {tipo && (
+        {tipo === "M" && <EjemplosMixtos />}
+        {tipo === "G" && <GuiaAnotacion />}
+
+        {esCategoria && (
           <>
             <div style={{ background: inst.bg, border: `1px solid ${inst.color}40`, borderRadius: 8, padding: "7px 9px", fontSize: 11, lineHeight: 1.45, marginBottom: 10 }}>
               <strong style={{ color: inst.color }}>{inst.titulo}</strong>
@@ -851,18 +980,21 @@ function FormularioAnotacion({ anotador }) {
   const [confianza, setConfianza]     = useState("alta");
   const [notas, setNotas]             = useState("");
   const [guardando, setGuardando]     = useState(false);
-  const [guardadas, setGuardadas]     = useState(0);
   const [stats, setStats]             = useState(null);
   const [cargando, setCargando]       = useState(true);
   const [pilotoCompletado, setPilotoCompletado] = useState(false);
   const [hoveredBtn, setHoveredBtn]   = useState(null);
 
-  const esPiloto = guardadas < 50;
+  // Avance en el bloque compartido (las 100 primeras oraciones, iguales para
+  // todos): mientras no se complete, es la "prueba piloto".
+  const bloque   = stats?.bloque;
+  const esPiloto = !!bloque && bloque.hechas < bloque.total;
+  const errores  = validarAnotacion(categoria, elementos);
 
   // `cargando` arranca en true y InterfazAnotacion remonta este componente
   // (key) al cambiar de anotador, así que no hace falta activarlo aquí.
   useEffect(() => {
-    getOracionesPendientes({ anotador_id: anotador.id, limite: 50, piloto: true })
+    getOracionesPendientes({ limite: 50 })
       .then(r => { setOraciones(r.data); setCargando(false); })
       .catch(() => setCargando(false));
     getStatsAnotador(anotador.id).then(r => setStats(r.data)).catch(() => {});
@@ -876,36 +1008,41 @@ function FormularioAnotacion({ anotador }) {
   };
 
   const handleGuardar = useCallback(async () => {
-    if (!categoria) return;
+    if (validarAnotacion(categoria, elementos).length) return;
     const oracion = oraciones[idx];
     setGuardando(true);
     try {
       await guardarAnotacion({
         oracion_id:  oracion.id,
-        anotador_id: anotador.id,
         categoria,
         elementos:   elementos.filter(e => e.elemento.trim()),
         confianza,
         notas: notas || null,
       });
-      setGuardadas(g => g + 1);
-      if (guardadas + 1 >= 50) setPilotoCompletado(true);
       if (idx + 1 < oraciones.length) {
         setIdx(i => i + 1);
         resetForm();
       } else {
-        const r = await getOracionesPendientes({ anotador_id: anotador.id, limite: 100 });
+        const r = await getOracionesPendientes({ limite: 100 });
         setOraciones(r.data);
         setIdx(0);
         resetForm();
       }
-      getStatsAnotador(anotador.id).then(r => setStats(r.data)).catch(() => {});
+      getStatsAnotador(anotador.id).then(r => {
+        const antes = stats?.bloque;
+        const ahora = r.data.bloque;
+        // Aviso solo en el momento en que se completa el bloque
+        if (antes && ahora && antes.hechas < antes.total && ahora.hechas >= ahora.total) {
+          setPilotoCompletado(true);
+        }
+        setStats(r.data);
+      }).catch(() => {});
     } catch (e) {
       console.error(e);
     } finally {
       setGuardando(false);
     }
-  }, [categoria, oraciones, idx, anotador.id, elementos, confianza, notas, guardadas]);
+  }, [categoria, oraciones, idx, anotador.id, elementos, confianza, notas, stats]);
 
   // Atajo de teclado: A, B, C para categoría — Enter para guardar
   useEffect(() => {
@@ -943,7 +1080,7 @@ function FormularioAnotacion({ anotador }) {
           </span>
           {esPiloto && (
             <span style={{ marginLeft: 8, background: "#fef0cc", color: "#c07800", border: "1px solid #f0c870", borderRadius: 8, fontSize: 10, padding: "2px 6px", fontWeight: 700 }}>
-              PRUEBA PILOTO
+              PRUEBA PILOTO · {bloque.hechas}/{bloque.total}
             </span>
           )}
         </div>
@@ -961,10 +1098,13 @@ function FormularioAnotacion({ anotador }) {
       {/* Aviso piloto completado */}
       {pilotoCompletado && (
         <div style={{ background: "#dff0df", border: "1px solid #a0d8a0", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#2e7d32" }}>
-          ✓ <strong>Prueba piloto completada</strong> — Ya puedes calcular el Kappa con el segundo anotador desde el Dashboard.
+          ✓ <strong>Prueba piloto completada</strong> — Ya se puede calcular el Kappa con otro anotador que haya terminado el bloque.
           Puedes seguir anotando para enriquecer el corpus.
         </div>
       )}
+
+      {/* Resumen del evento — para no perder el contexto de la nota */}
+      <ResumenEvento titular={oracion.titular_evento} resumen={oracion.resumen} />
 
       {/* Contexto previo */}
       {oracion.contexto_prev && (
@@ -1019,12 +1159,12 @@ function FormularioAnotacion({ anotador }) {
 
         <button
           onClick={handleGuardar}
-          disabled={!categoria || guardando}
+          disabled={errores.length > 0 || guardando}
           style={{
-            background: categoria ? "#C0392B" : "#ccc",
+            background: errores.length === 0 ? "#C0392B" : "#ccc",
             color: "#fff", border: "none", borderRadius: 8,
             padding: "10px 28px", fontSize: 14, fontWeight: 700,
-            cursor: categoria ? "pointer" : "default", fontFamily: "inherit",
+            cursor: errores.length === 0 ? "pointer" : "default", fontFamily: "inherit",
           }}
         >
           {guardando ? "..." : "Guardar →"}
@@ -1037,7 +1177,7 @@ function FormularioAnotacion({ anotador }) {
               setIdx(i => i + 1);
               resetForm();
             } else {
-              const r = await getOracionesPendientes({ anotador_id: anotador.id, limite: 100 });
+              const r = await getOracionesPendientes({ limite: 100 });
               setOraciones(r.data);
               setIdx(0);
               resetForm();
@@ -1129,6 +1269,13 @@ function FormularioAnotacion({ anotador }) {
         })()}
       </div>
 
+      {/* Qué falta para poder guardar */}
+      {categoria && errores.length > 0 && (
+        <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 12, color: "#C0392B", lineHeight: 1.6 }}>
+          {errores.map(m => <li key={m}>{m}</li>)}
+        </ul>
+      )}
+
       {/* Atajos */}
       <div style={{ marginTop: 12, fontSize: 11, color: "#bbb", textAlign: "center" }}>
         Atajos: <kbd style={{ background: "#f0ede8", padding: "1px 5px", borderRadius: 8 }}>A</kbd>
@@ -1189,13 +1336,13 @@ function FilaAnotacion({ row, indice = 0, anotador, onGuardado, onEliminado }) {
   };
 
   const guardar = async () => {
-    if (!categoria) return;
+    const faltan = validarAnotacion(categoria, elementos);
+    if (faltan.length) { setError(faltan.join(". ")); return; }
     setGuardando(true);
     setError("");
     try {
       await guardarAnotacion({
         oracion_id:  row.oracion_id,
-        anotador_id: anotador.id,
         categoria,
         elementos:   elementos.filter(e => e.elemento.trim()),
         confianza,
@@ -1455,32 +1602,28 @@ function BancoAnotaciones({ anotador }) {
 
 // ── Página principal ──────────────────────────────────────────
 export default function Anotacion() {
-  const [paso, setPaso]           = useState("instrucciones"); // instrucciones → anotador → anotar
-  const [anotador, setAnotador]   = useState(null);
+  const { usuario } = useAuth();
+  const [paso, setPaso]           = useState("instrucciones"); // instrucciones → anotar
   const [vista, setVista]         = useState("anotar"); // anotar → banco
 
-  const handleAnotador = (a) => {
-    setAnotador(a);
-    setPaso("anotar");
-  };
+  // La identidad sale de la sesión (perfil de anotador enlazado a la cuenta)
+  const anotador = usuario?.anotador || null;
 
   return (
     <div>
       <div className="page-header">
         <div className="page-title">Anotación A/B/C</div>
-        <div className="page-sub">Fase 4 del pipeline KDD · Prueba piloto: 50 oraciones</div>
+        <div className="page-sub">Fase 4 del pipeline KDD · Prueba piloto: 100 oraciones</div>
       </div>
 
       {/* Steps indicator */}
       <div style={{ display: "flex", gap: 0, marginBottom: "2rem", maxWidth: 500 }}>
         {[
           { id: "instrucciones", label: "1. Instrucciones" },
-          { id: "anotador",      label: "2. Identificación" },
-          { id: "anotar",        label: "3. Anotar" },
+          { id: "anotar",        label: "2. Anotar" },
         ].map((s, i) => {
           const active  = paso === s.id;
-          const done    = (i === 0 && paso !== "instrucciones") ||
-                          (i === 1 && paso === "anotar");
+          const done    = i === 0 && paso === "anotar";
           return (
             <div key={s.id} style={{ display: "flex", alignItems: "center", flex: 1 }}>
               <div style={{
@@ -1497,10 +1640,13 @@ export default function Anotacion() {
       </div>
 
       {paso === "instrucciones" && (
-        <Instrucciones onContinuar={() => setPaso("anotador")} />
+        <Instrucciones onContinuar={() => setPaso("anotar")} />
       )}
-      {paso === "anotador" && (
-        <SeleccionAnotador onSeleccionar={handleAnotador} />
+      {paso === "anotar" && !anotador && (
+        <div className="empty-state">
+          <div className="empty-state-icon">·</div>
+          <div className="empty-state-text">Tu cuenta no tiene un perfil de anotador enlazado.</div>
+        </div>
       )}
       {paso === "anotar" && anotador && (
         <>

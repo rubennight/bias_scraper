@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Eventos from "./pages/Eventos";
@@ -6,6 +7,9 @@ import Anotacion    from "./pages/Anotacion";
 import Scraper      from "./pages/Scraper";
 import Clasificador from "./pages/Clasificador";
 import Login from "./pages/Login";
+import Registro from "./pages/Registro";
+import Solicitudes from "./pages/Solicitudes";
+import { getContadorSolicitudes } from "./api";
 import hasPng from "./components/has.png";
 import { AuthProvider, useAuth } from "./AuthContext";
 import { ThemeProvider } from "./ThemeContext";
@@ -45,6 +49,18 @@ function NavLinks() {
   const { usuario } = useAuth();
   const puedeAnotar = usuario?.rol === "anotador" || usuario?.rol === "admin";
   const esAdmin     = usuario?.rol === "admin";
+  const [pendientes, setPendientes] = useState(0);
+
+  // Contador de solicitudes pendientes (solo admin): se consulta al montar
+  // y cada vez que la página de Solicitudes avisa de un cambio.
+  useEffect(() => {
+    if (!esAdmin) return undefined;
+    const cargar = () =>
+      getContadorSolicitudes().then(r => setPendientes(r.data.pendientes)).catch(() => {});
+    cargar();
+    window.addEventListener("solicitudes-actualizadas", cargar);
+    return () => window.removeEventListener("solicitudes-actualizadas", cargar);
+  }, [esAdmin]);
 
   return (
     <div className="nav-links">
@@ -67,6 +83,17 @@ function NavLinks() {
       {esAdmin && (
         <NavLink to="/clasificador" className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
           Clasificador
+        </NavLink>
+      )}
+      {esAdmin && (
+        <NavLink to="/solicitudes" className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
+          Solicitudes
+          {pendientes > 0 && (
+            <span style={{
+              marginLeft: 6, background: "var(--rev)", color: "#fff", borderRadius: 999,
+              fontSize: 10, fontWeight: 700, padding: "1px 6px",
+            }}>{pendientes}</span>
+          )}
         </NavLink>
       )}
     </div>
@@ -99,6 +126,7 @@ function Shell() {
             <Route path="/eventos"     element={<Eventos />} />
             <Route path="/eventos/:id" element={<EventoDetalle />} />
             <Route path="/login"       element={<Login />} />
+            <Route path="/registro"    element={<Registro />} />
 
             {/* Anotador o admin */}
             <Route path="/anotacion" element={
@@ -111,6 +139,9 @@ function Shell() {
             } />
             <Route path="/clasificador" element={
               <RouteGuard roles={["admin"]}><Clasificador /></RouteGuard>
+            } />
+            <Route path="/solicitudes" element={
+              <RouteGuard roles={["admin"]}><Solicitudes /></RouteGuard>
             } />
           </Routes>
         </PaginaTransicion>
